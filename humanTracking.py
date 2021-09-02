@@ -3,9 +3,9 @@ import numpy as np
 from PIL import Image
 import os
 from matplotlib import pyplot as plt
-from utils import label_map_util
+import cv2
 
-#if __name__ == "__main__":
-plt.plot([1])
-plt.ylabel('numbers')
-plt.show()    
+if __name__ == "__main__":
+    plt.plot([1])
+    plt.ylabel('numbers')
+    plt.show()
