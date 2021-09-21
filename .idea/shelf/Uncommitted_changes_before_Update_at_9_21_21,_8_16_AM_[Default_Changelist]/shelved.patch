@@ -1,0 +1,529 @@
+Index: humanTracking.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import tensorflow as tf\nimport numpy as np\nfrom PIL import Image\nimport os\nfrom matplotlib import pyplot as plt\nimport cv2\n\nif __name__ == \"__main__\":\n    plt.plot([1])\n    plt.ylabel('numbers')\n    plt.show()
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/humanTracking.py b/humanTracking.py
+--- a/humanTracking.py	(revision fa10df175d6454a1ebe9d574178513e3c5f1edca)
++++ b/humanTracking.py	(date 1632237230984)
+@@ -1,11 +1,162 @@
++# For running inference on the TF-Hub module.
+ import tensorflow as tf
++
++import tensorflow_hub as hub
++
++# For downloading the image.
++import matplotlib.pyplot as plt
++import tempfile
++from six.moves.urllib.request import urlopen
++from six import BytesIO
++
++# For drawing onto the image.
+ import numpy as np
+ from PIL import Image
+-import os
+-from matplotlib import pyplot as plt
+-import cv2
++from PIL import ImageColor
++from PIL import ImageDraw
++from PIL import ImageFont
++from PIL import ImageOps
++
++# For measuring the inference time.
++import time
++
++# Print Tensorflow version
++print(tf.__version__)
++
++# Check available GPU devices.
++print("The following GPU devices are available: %s" % tf.test.gpu_device_name())
++
++
++def display_image(image):
++    fig = plt.figure(figsize=(20, 15))
++    plt.grid(False)
++    plt.imshow(image)
++
++
++def download_and_resize_image(url, new_width=256, new_height=256,
++                              display=False):
++    _, filename = tempfile.mkstemp(suffix=".jpg")
++    response = urlopen(url)
++    image_data = response.read()
++    image_data = BytesIO(image_data)
++    pil_image = Image.open(image_data)
++    pil_image = ImageOps.fit(pil_image, (new_width, new_height), Image.ANTIALIAS)
++    pil_image_rgb = pil_image.convert("RGB")
++    pil_image_rgb.save(filename, format="JPEG", quality=90)
++    print("Image downloaded to %s." % filename)
++    if display:
++        display_image(pil_image)
++    return filename
+ 
+-if __name__ == "__main__":
+-    plt.plot([1])
+-    plt.ylabel('numbers')
+-    plt.show()
+\ No newline at end of file
++
++def draw_bounding_box_on_image(image,
++                               ymin,
++                               xmin,
++                               ymax,
++                               xmax,
++                               color,
++                               font,
++                               thickness=4,
++                               display_str_list=()):
++    """Adds a bounding box to an image."""
++    draw = ImageDraw.Draw(image)
++    im_width, im_height = image.size
++    (left, right, top, bottom) = (xmin * im_width, xmax * im_width,
++                                  ymin * im_height, ymax * im_height)
++    draw.line([(left, top), (left, bottom), (right, bottom), (right, top),
++               (left, top)],
++              width=thickness,
++              fill=color)
++
++    # If the total height of the display strings added to the top of the bounding
++    # box exceeds the top of the image, stack the strings below the bounding box
++    # instead of above.
++    display_str_heights = [font.getsize(ds)[1] for ds in display_str_list]
++    # Each display_str has a top and bottom margin of 0.05x.
++    total_display_str_height = (1 + 2 * 0.05) * sum(display_str_heights)
++
++    if top > total_display_str_height:
++        text_bottom = top
++    else:
++        text_bottom = top + total_display_str_height
++    # Reverse list and print from bottom to top.
++    for display_str in display_str_list[::-1]:
++        text_width, text_height = font.getsize(display_str)
++        margin = np.ceil(0.05 * text_height)
++        draw.rectangle([(left, text_bottom - text_height - 2 * margin),
++                        (left + text_width, text_bottom)],
++                       fill=color)
++        draw.text((left + margin, text_bottom - text_height - margin),
++                  display_str,
++                  fill="black",
++                  font=font)
++        text_bottom -= text_height - 2 * margin
++
++
++def draw_boxes(image, boxes, class_names, scores, max_boxes=10, min_score=0.1):
++    """Overlay labeled boxes on an image with formatted scores and label names."""
++    colors = list(ImageColor.colormap.values())
++
++    try:
++        font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSansNarrow-Regular.ttf",
++                                  25)
++    except IOError:
++        print("Font not found, using default font.")
++        font = ImageFont.load_default()
++
++    for i in range(min(boxes.shape[0], max_boxes)):
++        if scores[i] >= min_score:
++            ymin, xmin, ymax, xmax = tuple(boxes[i])
++            display_str = "{}: {}%".format(class_names[i].decode("ascii"),
++                                           int(100 * scores[i]))
++            color = colors[hash(class_names[i]) % len(colors)]
++            image_pil = Image.fromarray(np.uint8(image)).convert("RGB")
++            draw_bounding_box_on_image(
++                image_pil,
++                ymin,
++                xmin,
++                ymax,
++                xmax,
++                color,
++                font,
++                display_str_list=[display_str])
++            np.copyto(image, np.array(image_pil))
++    return image
++
++
++# By Heiko Gorski, Source: https://commons.wikimedia.org/wiki/File:Naxos_Taverna.jpg
++image_url = "https://upload.wikimedia.org/wikipedia/commons/6/60/Naxos_Taverna.jpg"
++downloaded_image_path = download_and_resize_image(image_url, 1280, 856, True)
++
++module_handle = "https://tfhub.dev/google/openimages_v4/ssd/mobilenet_v2/1"
++
++detector = hub.load(module_handle).signatures['default']
++
++
++def load_img(path):
++    img = tf.io.read_file(path)
++    img = tf.image.decode_jpeg(img, channels=3)
++    return img
++
++
++def run_detector(detector, path):
++    img = load_img(path)
++
++    converted_img = tf.image.convert_image_dtype(img, tf.float32)[tf.newaxis, ...]
++    start_time = time.time()
++    result = detector(converted_img)
++    end_time = time.time()
++
++    result = {key: value.numpy() for key, value in result.items()}
++
++    print("Found %d objects." % len(result["detection_scores"]))
++    print("Inference time: ", end_time - start_time)
++
++    image_with_boxes = draw_boxes(
++        img.numpy(), result["detection_boxes"],
++        result["detection_class_entities"], result["detection_scores"])
++
++    display_image(image_with_boxes)
++
++
++run_detector(detector, downloaded_image_path)
+\ No newline at end of file
+Index: README.md
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+># SecurityCamera
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/README.md b/README.md
+--- a/README.md	(revision fa10df175d6454a1ebe9d574178513e3c5f1edca)
++++ b/README.md	(date 1630612895824)
+@@ -1,1 +1,9 @@
+-# SecurityCamera
+\ No newline at end of file
++# SecurityCamera
++
++# Functions:
++-panCameraX
++-panCameraY
++-detectHuman
++-readFrame
++-calculateHumanBorder
++-calculateHumanDistance
+Index: .idea/SecurityCamera.iml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<module type=\"PYTHON_MODULE\" version=\"4\">\n  <component name=\"NewModuleRootManager\">\n    <content url=\"file://$MODULE_DIR$\" />\n    <orderEntry type=\"jdk\" jdkName=\"Python 3.6\" jdkType=\"Python SDK\" />\n    <orderEntry type=\"sourceFolder\" forTests=\"false\" />\n  </component>\n  <component name=\"TestRunnerService\">\n    <option name=\"PROJECT_TEST_RUNNER\" value=\"Unittests\" />\n  </component>\n</module>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/SecurityCamera.iml b/.idea/SecurityCamera.iml
+--- a/.idea/SecurityCamera.iml	(revision fa10df175d6454a1ebe9d574178513e3c5f1edca)
++++ b/.idea/SecurityCamera.iml	(date 1632198875628)
+@@ -2,8 +2,11 @@
+ <module type="PYTHON_MODULE" version="4">
+   <component name="NewModuleRootManager">
+     <content url="file://$MODULE_DIR$" />
+-    <orderEntry type="jdk" jdkName="Python 3.6" jdkType="Python SDK" />
++    <orderEntry type="jdk" jdkName="Python 3.8 (mlp)" jdkType="Python SDK" />
+     <orderEntry type="sourceFolder" forTests="false" />
++  </component>
++  <component name="PyDocumentationSettings">
++    <option name="renderExternalDocumentation" value="true" />
+   </component>
+   <component name="TestRunnerService">
+     <option name="PROJECT_TEST_RUNNER" value="Unittests" />
+Index: .idea/workspace.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<project version=\"4\">\n  <component name=\"ChangeListManager\">\n    <list default=\"true\" id=\"6db736db-cd44-435c-853b-0fe9ddcde649\" name=\"Default Changelist\" comment=\"\">\n      <change beforePath=\"$PROJECT_DIR$/.idea/SecurityCamera.iml\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/.idea/SecurityCamera.iml\" afterDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/.idea/misc.xml\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/.idea/misc.xml\" afterDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/humanTracking.py\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/humanTracking.py\" afterDir=\"false\" />\n    </list>\n    <option name=\"EXCLUDED_CONVERTED_TO_IGNORED\" value=\"true\" />\n    <option name=\"SHOW_DIALOG\" value=\"false\" />\n    <option name=\"HIGHLIGHT_CONFLICTS\" value=\"true\" />\n    <option name=\"HIGHLIGHT_NON_ACTIVE_CHANGELIST\" value=\"false\" />\n    <option name=\"LAST_RESOLUTION\" value=\"IGNORE\" />\n  </component>\n  <component name=\"FileEditorManager\">\n    <leaf SIDE_TABS_SIZE_LIMIT_KEY=\"300\">\n      <file pinned=\"false\" current-in-tab=\"false\">\n        <entry file=\"file://$PROJECT_DIR$/humanTracking.py\">\n          <provider selected=\"true\" editor-type-id=\"text-editor\">\n            <state relative-caret-position=\"75\">\n              <caret line=\"10\" column=\"14\" selection-start-line=\"10\" selection-start-column=\"14\" selection-end-line=\"10\" selection-end-column=\"14\" />\n              <folding>\n                <element signature=\"e#0#23#0\" expanded=\"true\" />\n              </folding>\n            </state>\n          </provider>\n        </entry>\n      </file>\n      <file pinned=\"false\" current-in-tab=\"true\">\n        <entry file=\"file://$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/Makefile\">\n          <provider selected=\"true\" editor-type-id=\"text-editor\">\n            <state relative-caret-position=\"120\">\n              <caret line=\"8\" column=\"16\" lean-forward=\"true\" selection-start-line=\"8\" selection-start-column=\"16\" selection-end-line=\"8\" selection-end-column=\"16\" />\n            </state>\n          </provider>\n        </entry>\n      </file>\n      <file pinned=\"false\" current-in-tab=\"false\">\n        <entry file=\"file://$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/setup.py\">\n          <provider selected=\"true\" editor-type-id=\"text-editor\">\n            <state relative-caret-position=\"405\">\n              <caret line=\"27\" selection-start-line=\"27\" selection-end-line=\"27\" />\n              <folding>\n                <element signature=\"e#0#39#0\" expanded=\"true\" />\n              </folding>\n            </state>\n          </provider>\n        </entry>\n      </file>\n      <file pinned=\"false\" current-in-tab=\"false\">\n        <entry file=\"file://$PROJECT_DIR$/Tensorflow/cocoapi/README.txt\">\n          <provider selected=\"true\" editor-type-id=\"text-editor\">\n            <state relative-caret-position=\"225\">\n              <caret line=\"15\" selection-start-line=\"15\" selection-end-line=\"15\" />\n            </state>\n          </provider>\n        </entry>\n      </file>\n    </leaf>\n  </component>\n  <component name=\"FileTemplateManagerImpl\">\n    <option name=\"RECENT_TEMPLATES\">\n      <list>\n        <option value=\"Python Script\" />\n      </list>\n    </option>\n  </component>\n  <component name=\"FindInProjectRecents\">\n    <findStrings>\n      <find>setuptools</find>\n    </findStrings>\n  </component>\n  <component name=\"Git.Settings\">\n    <option name=\"RECENT_GIT_ROOT_PATH\" value=\"$PROJECT_DIR$/Tensorflow/cocoapi\" />\n  </component>\n  <component name=\"IdeDocumentHistory\">\n    <option name=\"CHANGED_PATHS\">\n      <list>\n        <option value=\"$PROJECT_DIR$/humanTracking.py\" />\n      </list>\n    </option>\n  </component>\n  <component name=\"ProjectFrameBounds\">\n    <option name=\"x\" value=\"933\" />\n    <option name=\"width\" value=\"987\" />\n    <option name=\"height\" value=\"1080\" />\n  </component>\n  <component name=\"ProjectLevelVcsManager\" settingsEditedManually=\"true\" />\n  <component name=\"ProjectView\">\n    <navigator proportions=\"\" version=\"1\">\n      <foldersAlwaysOnTop value=\"true\" />\n    </navigator>\n    <panes>\n      <pane id=\"ProjectPane\">\n        <subPane>\n          <expand>\n            <path>\n              <item name=\"SecurityCamera\" type=\"b2602c69:ProjectViewProjectNode\" />\n              <item name=\"SecurityCamera\" type=\"462c0819:PsiDirectoryNode\" />\n            </path>\n            <path>\n              <item name=\"SecurityCamera\" type=\"b2602c69:ProjectViewProjectNode\" />\n              <item name=\"SecurityCamera\" type=\"462c0819:PsiDirectoryNode\" />\n              <item name=\"Tensorflow\" type=\"462c0819:PsiDirectoryNode\" />\n            </path>\n            <path>\n              <item name=\"SecurityCamera\" type=\"b2602c69:ProjectViewProjectNode\" />\n              <item name=\"SecurityCamera\" type=\"462c0819:PsiDirectoryNode\" />\n              <item name=\"Tensorflow\" type=\"462c0819:PsiDirectoryNode\" />\n              <item name=\"cocoapi\" type=\"462c0819:PsiDirectoryNode\" />\n            </path>\n          </expand>\n          <select />\n        </subPane>\n      </pane>\n      <pane id=\"Scope\" />\n    </panes>\n  </component>\n  <component name=\"PropertiesComponent\">\n    <property name=\"ASKED_SHARE_PROJECT_CONFIGURATION_FILES\" value=\"true\" />\n    <property name=\"SHARE_PROJECT_CONFIGURATION_FILES\" value=\"true\" />\n    <property name=\"settings.editor.selected.configurable\" value=\"com.jetbrains.python.configuration.PythonContentEntriesConfigurable\" />\n  </component>\n  <component name=\"RecentsManager\">\n    <key name=\"MoveFile.RECENT_KEYS\">\n      <recent name=\"$PROJECT_DIR$/Tensorflow/protoc\" />\n    </key>\n  </component>\n  <component name=\"RunDashboard\">\n    <option name=\"ruleStates\">\n      <list>\n        <RuleState>\n          <option name=\"name\" value=\"ConfigurationTypeDashboardGroupingRule\" />\n        </RuleState>\n        <RuleState>\n          <option name=\"name\" value=\"StatusDashboardGroupingRule\" />\n        </RuleState>\n      </list>\n    </option>\n  </component>\n  <component name=\"RunManager\" selected=\"Makefile.all\">\n    <configuration name=\"all\" type=\"MAKEFILE_TARGET_RUN_CONFIGURATION\" factoryName=\"Makefile\" temporary=\"true\">\n      <makefile filename=\"$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/Makefile\" target=\"all\" workingDirectory=\"\" arguments=\"\">\n        <envs />\n      </makefile>\n      <method v=\"2\" />\n    </configuration>\n    <configuration name=\"humanTracking\" type=\"PythonConfigurationType\" factoryName=\"Python\" temporary=\"true\">\n      <module name=\"SecurityCamera\" />\n      <option name=\"INTERPRETER_OPTIONS\" value=\"\" />\n      <option name=\"PARENT_ENVS\" value=\"true\" />\n      <envs>\n        <env name=\"PYTHONUNBUFFERED\" value=\"1\" />\n      </envs>\n      <option name=\"SDK_HOME\" value=\"\" />\n      <option name=\"WORKING_DIRECTORY\" value=\"$PROJECT_DIR$\" />\n      <option name=\"IS_MODULE_SDK\" value=\"true\" />\n      <option name=\"ADD_CONTENT_ROOTS\" value=\"true\" />\n      <option name=\"ADD_SOURCE_ROOTS\" value=\"true\" />\n      <option name=\"SCRIPT_NAME\" value=\"$PROJECT_DIR$/humanTracking.py\" />\n      <option name=\"PARAMETERS\" value=\"\" />\n      <option name=\"SHOW_COMMAND_LINE\" value=\"false\" />\n      <option name=\"EMULATE_TERMINAL\" value=\"false\" />\n      <option name=\"MODULE_MODE\" value=\"false\" />\n      <option name=\"REDIRECT_INPUT\" value=\"false\" />\n      <option name=\"INPUT_FILE\" value=\"\" />\n      <method v=\"2\" />\n    </configuration>\n    <recent_temporary>\n      <list>\n        <item itemvalue=\"Makefile.all\" />\n        <item itemvalue=\"Python.humanTracking\" />\n      </list>\n    </recent_temporary>\n  </component>\n  <component name=\"SvnConfiguration\">\n    <configuration />\n  </component>\n  <component name=\"TaskManager\">\n    <task active=\"true\" id=\"Default\" summary=\"Default task\">\n      <changelist id=\"6db736db-cd44-435c-853b-0fe9ddcde649\" name=\"Default Changelist\" comment=\"\" />\n      <created>1630379749309</created>\n      <option name=\"number\" value=\"Default\" />\n      <option name=\"presentableId\" value=\"Default\" />\n      <updated>1630379749309</updated>\n    </task>\n    <task id=\"LOCAL-00001\" summary=\"Added some imports that are going to be used.\">\n      <created>1630388349862</created>\n      <option name=\"number\" value=\"00001\" />\n      <option name=\"presentableId\" value=\"LOCAL-00001\" />\n      <option name=\"project\" value=\"LOCAL\" />\n      <updated>1630388349863</updated>\n    </task>\n    <option name=\"localTasksCounter\" value=\"2\" />\n    <servers />\n  </component>\n  <component name=\"TodoView\">\n    <todo-panel id=\"selected-file\">\n      <is-autoscroll-to-source value=\"true\" />\n    </todo-panel>\n    <todo-panel id=\"all\">\n      <are-packages-shown value=\"true\" />\n      <is-autoscroll-to-source value=\"true\" />\n    </todo-panel>\n  </component>\n  <component name=\"ToolWindowManager\">\n    <frame x=\"933\" y=\"0\" width=\"987\" height=\"1080\" extended-state=\"0\" />\n    <editor active=\"true\" />\n    <layout>\n      <window_info active=\"true\" content_ui=\"combo\" id=\"Project\" order=\"0\" sideWeight=\"0.49915683\" visible=\"true\" weight=\"0.24178155\" />\n      <window_info id=\"Structure\" order=\"1\" sideWeight=\"0.50084317\" side_tool=\"true\" weight=\"0.24941361\" />\n      <window_info id=\"Favorites\" order=\"2\" side_tool=\"true\" />\n      <window_info anchor=\"bottom\" id=\"Message\" order=\"0\" />\n      <window_info anchor=\"bottom\" id=\"Find\" order=\"1\" />\n      <window_info anchor=\"bottom\" id=\"Run\" order=\"2\" visible=\"true\" weight=\"0.32883817\" />\n      <window_info anchor=\"bottom\" id=\"Debug\" order=\"3\" weight=\"0.4\" />\n      <window_info anchor=\"bottom\" id=\"Cvs\" order=\"4\" weight=\"0.25\" />\n      <window_info anchor=\"bottom\" id=\"Inspection\" order=\"5\" weight=\"0.4\" />\n      <window_info anchor=\"bottom\" id=\"TODO\" order=\"6\" weight=\"0.32918552\" />\n      <window_info anchor=\"bottom\" id=\"Version Control\" order=\"7\" weight=\"0.32918552\" />\n      <window_info anchor=\"bottom\" id=\"Terminal\" order=\"8\" weight=\"0.30186722\" />\n      <window_info anchor=\"bottom\" id=\"Event Log\" order=\"9\" side_tool=\"true\" />\n      <window_info anchor=\"bottom\" id=\"Python Console\" order=\"10\" weight=\"0.32918552\" />\n      <window_info anchor=\"right\" id=\"make\" />\n      <window_info anchor=\"right\" id=\"Commander\" internal_type=\"SLIDING\" order=\"0\" type=\"SLIDING\" weight=\"0.4\" />\n      <window_info anchor=\"right\" id=\"Ant Build\" order=\"1\" weight=\"0.25\" />\n      <window_info anchor=\"right\" content_ui=\"combo\" id=\"Hierarchy\" order=\"2\" weight=\"0.25\" />\n    </layout>\n  </component>\n  <component name=\"Vcs.Log.Tabs.Properties\">\n    <option name=\"TAB_STATES\">\n      <map>\n        <entry key=\"MAIN\">\n          <value>\n            <State>\n              <option name=\"RECENTLY_FILTERED_USER_GROUPS\">\n                <collection />\n              </option>\n              <option name=\"RECENTLY_FILTERED_BRANCH_GROUPS\">\n                <collection />\n              </option>\n              <option name=\"COLUMN_ORDER\">\n                <list>\n                  <option value=\"0\" />\n                  <option value=\"1\" />\n                  <option value=\"2\" />\n                  <option value=\"3\" />\n                </list>\n              </option>\n            </State>\n          </value>\n        </entry>\n      </map>\n    </option>\n    <option name=\"RECENT_FILTERS\">\n      <map>\n        <entry key=\"Branch\">\n          <value>\n            <list />\n          </value>\n        </entry>\n        <entry key=\"User\">\n          <value>\n            <list />\n          </value>\n        </entry>\n      </map>\n    </option>\n  </component>\n  <component name=\"VcsManagerConfiguration\">\n    <MESSAGE value=\"Added some imports that are going to be used.\" />\n    <option name=\"LAST_COMMIT_MESSAGE\" value=\"Added some imports that are going to be used.\" />\n  </component>\n  <component name=\"editorHistoryManager\">\n    <entry file=\"file://$PROJECT_DIR$/Tensorflow/protoc/readme.txt\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\" />\n    </entry>\n    <entry file=\"file://$PROJECT_DIR$/humanTracking.py\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\">\n        <state relative-caret-position=\"75\">\n          <caret line=\"10\" column=\"14\" selection-start-line=\"10\" selection-start-column=\"14\" selection-end-line=\"10\" selection-end-column=\"14\" />\n          <folding>\n            <element signature=\"e#0#23#0\" expanded=\"true\" />\n          </folding>\n        </state>\n      </provider>\n    </entry>\n    <entry file=\"file://$USER_HOME$/.local/lib/python3.6/site-packages/setuptools/__init__.py\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\">\n        <state>\n          <folding>\n            <element signature=\"e#72#103#0\" expanded=\"true\" />\n          </folding>\n        </state>\n      </provider>\n    </entry>\n    <entry file=\"file://$PROJECT_DIR$/Tensorflow/cocoapi/README.txt\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\">\n        <state relative-caret-position=\"225\">\n          <caret line=\"15\" selection-start-line=\"15\" selection-end-line=\"15\" />\n        </state>\n      </provider>\n    </entry>\n    <entry file=\"file://$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/setup.py\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\">\n        <state relative-caret-position=\"405\">\n          <caret line=\"27\" selection-start-line=\"27\" selection-end-line=\"27\" />\n          <folding>\n            <element signature=\"e#0#39#0\" expanded=\"true\" />\n          </folding>\n        </state>\n      </provider>\n    </entry>\n    <entry file=\"file://$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/Makefile\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\">\n        <state relative-caret-position=\"120\">\n          <caret line=\"8\" column=\"16\" lean-forward=\"true\" selection-start-line=\"8\" selection-start-column=\"16\" selection-end-line=\"8\" selection-end-column=\"16\" />\n        </state>\n      </provider>\n    </entry>\n  </component>\n</project>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/workspace.xml b/.idea/workspace.xml
+--- a/.idea/workspace.xml	(revision fa10df175d6454a1ebe9d574178513e3c5f1edca)
++++ b/.idea/workspace.xml	(date 1632237413243)
+@@ -2,62 +2,18 @@
+ <project version="4">
+   <component name="ChangeListManager">
+     <list default="true" id="6db736db-cd44-435c-853b-0fe9ddcde649" name="Default Changelist" comment="">
++      <change afterPath="$PROJECT_DIR$/.idea/other.xml" afterDir="false" />
+       <change beforePath="$PROJECT_DIR$/.idea/SecurityCamera.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/SecurityCamera.iml" afterDir="false" />
+       <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+       <change beforePath="$PROJECT_DIR$/humanTracking.py" beforeDir="false" afterPath="$PROJECT_DIR$/humanTracking.py" afterDir="false" />
+     </list>
+-    <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
+     <option name="SHOW_DIALOG" value="false" />
+     <option name="HIGHLIGHT_CONFLICTS" value="true" />
+     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+     <option name="LAST_RESOLUTION" value="IGNORE" />
+   </component>
+-  <component name="FileEditorManager">
+-    <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
+-      <file pinned="false" current-in-tab="false">
+-        <entry file="file://$PROJECT_DIR$/humanTracking.py">
+-          <provider selected="true" editor-type-id="text-editor">
+-            <state relative-caret-position="75">
+-              <caret line="10" column="14" selection-start-line="10" selection-start-column="14" selection-end-line="10" selection-end-column="14" />
+-              <folding>
+-                <element signature="e#0#23#0" expanded="true" />
+-              </folding>
+-            </state>
+-          </provider>
+-        </entry>
+-      </file>
+-      <file pinned="false" current-in-tab="true">
+-        <entry file="file://$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/Makefile">
+-          <provider selected="true" editor-type-id="text-editor">
+-            <state relative-caret-position="120">
+-              <caret line="8" column="16" lean-forward="true" selection-start-line="8" selection-start-column="16" selection-end-line="8" selection-end-column="16" />
+-            </state>
+-          </provider>
+-        </entry>
+-      </file>
+-      <file pinned="false" current-in-tab="false">
+-        <entry file="file://$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/setup.py">
+-          <provider selected="true" editor-type-id="text-editor">
+-            <state relative-caret-position="405">
+-              <caret line="27" selection-start-line="27" selection-end-line="27" />
+-              <folding>
+-                <element signature="e#0#39#0" expanded="true" />
+-              </folding>
+-            </state>
+-          </provider>
+-        </entry>
+-      </file>
+-      <file pinned="false" current-in-tab="false">
+-        <entry file="file://$PROJECT_DIR$/Tensorflow/cocoapi/README.txt">
+-          <provider selected="true" editor-type-id="text-editor">
+-            <state relative-caret-position="225">
+-              <caret line="15" selection-start-line="15" selection-end-line="15" />
+-            </state>
+-          </provider>
+-        </entry>
+-      </file>
+-    </leaf>
+-  </component>
+   <component name="FileTemplateManagerImpl">
+     <option name="RECENT_TEMPLATES">
+       <list>
+@@ -71,7 +27,7 @@
+     </findStrings>
+   </component>
+   <component name="Git.Settings">
+-    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/Tensorflow/cocoapi" />
++    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+   </component>
+   <component name="IdeDocumentHistory">
+     <option name="CHANGED_PATHS">
+@@ -85,6 +41,7 @@
+     <option name="width" value="987" />
+     <option name="height" value="1080" />
+   </component>
++  <component name="ProjectId" id="1yQxcYI0ell06ZJ6uhz19EGN6fz" />
+   <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
+   <component name="ProjectView">
+     <navigator proportions="" version="1">
+@@ -116,36 +73,52 @@
+       <pane id="Scope" />
+     </panes>
+   </component>
++  <component name="ProjectViewState">
++    <option name="hideEmptyMiddlePackages" value="true" />
++    <option name="showLibraryContents" value="true" />
++  </component>
+   <component name="PropertiesComponent">
+     <property name="ASKED_SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
+     <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
+-    <property name="settings.editor.selected.configurable" value="com.jetbrains.python.configuration.PythonContentEntriesConfigurable" />
++    <property name="WebServerToolWindowFactoryState" value="false" />
++    <property name="last_opened_file_path" value="$PROJECT_DIR$" />
++    <property name="settings.editor.selected.configurable" value="com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable" />
+   </component>
+   <component name="RecentsManager">
+     <key name="MoveFile.RECENT_KEYS">
+       <recent name="$PROJECT_DIR$/Tensorflow/protoc" />
+     </key>
+   </component>
+-  <component name="RunDashboard">
+-    <option name="ruleStates">
+-      <list>
+-        <RuleState>
+-          <option name="name" value="ConfigurationTypeDashboardGroupingRule" />
+-        </RuleState>
+-        <RuleState>
+-          <option name="name" value="StatusDashboardGroupingRule" />
+-        </RuleState>
+-      </list>
+-    </option>
+-  </component>
+-  <component name="RunManager" selected="Makefile.all">
++  <component name="RunManager" selected="Python.humanTracking">
+     <configuration name="all" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile" temporary="true">
+       <makefile filename="$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/Makefile" target="all" workingDirectory="" arguments="">
+         <envs />
+       </makefile>
+       <method v="2" />
+     </configuration>
+-    <configuration name="humanTracking" type="PythonConfigurationType" factoryName="Python" temporary="true">
++    <configuration name="Unnamed" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
++      <module name="SecurityCamera" />
++      <option name="INTERPRETER_OPTIONS" value="" />
++      <option name="PARENT_ENVS" value="true" />
++      <envs>
++        <env name="PYTHONUNBUFFERED" value="1" />
++      </envs>
++      <option name="SDK_HOME" value="" />
++      <option name="WORKING_DIRECTORY" value="" />
++      <option name="IS_MODULE_SDK" value="true" />
++      <option name="ADD_CONTENT_ROOTS" value="true" />
++      <option name="ADD_SOURCE_ROOTS" value="true" />
++      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
++      <option name="SCRIPT_NAME" value="" />
++      <option name="PARAMETERS" value="" />
++      <option name="SHOW_COMMAND_LINE" value="true" />
++      <option name="EMULATE_TERMINAL" value="false" />
++      <option name="MODULE_MODE" value="false" />
++      <option name="REDIRECT_INPUT" value="false" />
++      <option name="INPUT_FILE" value="" />
++      <method v="2" />
++    </configuration>
++    <configuration default="true" type="PythonConfigurationType" factoryName="Python">
+       <module name="SecurityCamera" />
+       <option name="INTERPRETER_OPTIONS" value="" />
+       <option name="PARENT_ENVS" value="true" />
+@@ -153,26 +126,51 @@
+         <env name="PYTHONUNBUFFERED" value="1" />
+       </envs>
+       <option name="SDK_HOME" value="" />
++      <option name="WORKING_DIRECTORY" value="" />
++      <option name="IS_MODULE_SDK" value="false" />
++      <option name="ADD_CONTENT_ROOTS" value="true" />
++      <option name="ADD_SOURCE_ROOTS" value="true" />
++      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
++      <option name="SCRIPT_NAME" value="" />
++      <option name="PARAMETERS" value="" />
++      <option name="SHOW_COMMAND_LINE" value="true" />
++      <option name="EMULATE_TERMINAL" value="false" />
++      <option name="MODULE_MODE" value="false" />
++      <option name="REDIRECT_INPUT" value="false" />
++      <option name="INPUT_FILE" value="" />
++      <method v="2" />
++    </configuration>
++    <configuration name="humanTracking" type="PythonConfigurationType" factoryName="Python" temporary="true">
++      <module name="SecurityCamera" />
++      <option name="INTERPRETER_OPTIONS" value="" />
++      <option name="PARENT_ENVS" value="true" />
++      <option name="SDK_HOME" value="" />
+       <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+       <option name="IS_MODULE_SDK" value="true" />
+       <option name="ADD_CONTENT_ROOTS" value="true" />
+       <option name="ADD_SOURCE_ROOTS" value="true" />
++      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/humanTracking.py" />
+       <option name="PARAMETERS" value="" />
+-      <option name="SHOW_COMMAND_LINE" value="false" />
++      <option name="SHOW_COMMAND_LINE" value="true" />
+       <option name="EMULATE_TERMINAL" value="false" />
+       <option name="MODULE_MODE" value="false" />
+       <option name="REDIRECT_INPUT" value="false" />
+       <option name="INPUT_FILE" value="" />
+       <method v="2" />
+     </configuration>
++    <list>
++      <item itemvalue="Makefile Target.all" />
++      <item itemvalue="Python.humanTracking" />
++      <item itemvalue="Python.Unnamed" />
++    </list>
+     <recent_temporary>
+       <list>
+-        <item itemvalue="Makefile.all" />
+         <item itemvalue="Python.humanTracking" />
+       </list>
+     </recent_temporary>
+   </component>
++  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+   <component name="SvnConfiguration">
+     <configuration />
+   </component>
+@@ -183,6 +181,7 @@
+       <option name="number" value="Default" />
+       <option name="presentableId" value="Default" />
+       <updated>1630379749309</updated>
++      <workItem from="1632197696336" duration="6280000" />
+     </task>
+     <task id="LOCAL-00001" summary="Added some imports that are going to be used.">
+       <created>1630388349862</created>
+@@ -226,28 +225,16 @@
+       <window_info anchor="right" id="Ant Build" order="1" weight="0.25" />
+       <window_info anchor="right" content_ui="combo" id="Hierarchy" order="2" weight="0.25" />
+     </layout>
++  </component>
++  <component name="TypeScriptGeneratedFilesManager">
++    <option name="version" value="3" />
+   </component>
+   <component name="Vcs.Log.Tabs.Properties">
+     <option name="TAB_STATES">
+       <map>
+         <entry key="MAIN">
+           <value>
+-            <State>
+-              <option name="RECENTLY_FILTERED_USER_GROUPS">
+-                <collection />
+-              </option>
+-              <option name="RECENTLY_FILTERED_BRANCH_GROUPS">
+-                <collection />
+-              </option>
+-              <option name="COLUMN_ORDER">
+-                <list>
+-                  <option value="0" />
+-                  <option value="1" />
+-                  <option value="2" />
+-                  <option value="3" />
+-                </list>
+-              </option>
+-            </State>
++            <State />
+           </value>
+         </entry>
+       </map>
+@@ -266,6 +253,7 @@
+         </entry>
+       </map>
+     </option>
++    <option name="oldMeFiltersMigrated" value="true" />
+   </component>
+   <component name="VcsManagerConfiguration">
+     <MESSAGE value="Added some imports that are going to be used." />
+Index: .idea/misc.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<project version=\"4\">\n  <component name=\"ProjectRootManager\" version=\"2\" project-jdk-name=\"Python 3.6\" project-jdk-type=\"Python SDK\" />\n</project>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/misc.xml b/.idea/misc.xml
+--- a/.idea/misc.xml	(revision fa10df175d6454a1ebe9d574178513e3c5f1edca)
++++ b/.idea/misc.xml	(date 1632199268912)
+@@ -1,4 +1,7 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <project version="4">
+-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.6" project-jdk-type="Python SDK" />
++  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.8 (mlp)" project-jdk-type="Python SDK" />
++  <component name="PythonCompatibilityInspectionAdvertiser">
++    <option name="version" value="3" />
++  </component>
+ </project>
+\ No newline at end of file
+Index: .idea/other.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/other.xml b/.idea/other.xml
+new file mode 100644
+--- /dev/null	(date 1632197774642)
++++ b/.idea/other.xml	(date 1632197774642)
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<project version="4">
++  <component name="PySciProjectComponent">
++    <option name="PY_SCI_VIEW" value="true" />
++    <option name="PY_SCI_VIEW_SUGGESTED" value="true" />
++  </component>
++</project>
+\ No newline at end of file
