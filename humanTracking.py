@@ -10,7 +10,7 @@ from PIL import ImageColor
 from PIL import ImageDraw
 from PIL import ImageFont
 from PIL import ImageOps
-import cv2
+# import cv2
 
 # For measuring the inference time.
 import time

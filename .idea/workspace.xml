@@ -1,15 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="6db736db-cd44-435c-853b-0fe9ddcde649" name="Default Changelist" comment="Added some imports that are going to be used.">
-      <change afterPath="$PROJECT_DIR$/camera_stream.py" afterDir="false" />
+    <list default="true" id="6db736db-cd44-435c-853b-0fe9ddcde649" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/SecurityCamera.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/SecurityCamera.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Update_at_9_21_21__8_16_AM__Default_Changelist_.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Update_at_9_21_21__8_16_AM__Default_Changelist_.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ObjectDetectionTest.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/ObjectDetectionTest.ipynb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Tensorflow/tf2_api_env/bin/python" beforeDir="false" afterPath="$PROJECT_DIR$/Tensorflow/tf2_api_env/bin/python" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/camera_stream.py" beforeDir="false" afterPath="$PROJECT_DIR$/camera_stream.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/humanTracking.py" beforeDir="false" afterPath="$PROJECT_DIR$/humanTracking.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -20,8 +17,8 @@
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
       <list>
-        <option value="Jupyter Notebook" />
         <option value="Python Script" />
+        <option value="Jupyter Notebook" />
       </list>
     </option>
   </component>
@@ -83,11 +80,9 @@
   </component>
   <component name="PropertiesComponent">
     <property name="ASKED_SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
-    <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
-    <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
     <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
     <property name="WebServerToolWindowFactoryState" value="false" />
-    <property name="last_opened_file_path" value="$USER_HOME$/.conda/envs/tf-gpu/python.exe" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$" />
     <property name="settings.editor.selected.configurable" value="org.jetbrains.plugins.notebooks.jupyter.connections.configuration.JupyterServerConfigurable" />
   </component>
   <component name="RecentsManager">
@@ -95,7 +90,13 @@
       <recent name="$PROJECT_DIR$/Tensorflow/protoc" />
     </key>
   </component>
-  <component name="RunManager">
+  <component name="RunManager" selected="Python.humanTracking">
+    <configuration name="all" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile" temporary="true">
+      <makefile filename="$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/Makefile" target="all" workingDirectory="" arguments="">
+        <envs />
+      </makefile>
+      <method v="2" />
+    </configuration>
     <configuration default="true" type="PythonConfigurationType" factoryName="Python">
       <module name="SecurityCamera" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -122,9 +123,9 @@
       <module name="SecurityCamera" />
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
-      <option name="SDK_HOME" value="" />
+      <option name="SDK_HOME" value="/opt/homebrew/Caskroom/miniforge/base/envs/mlp/bin/python" />
       <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
-      <option name="IS_MODULE_SDK" value="true" />
+      <option name="IS_MODULE_SDK" value="false" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
@@ -137,6 +138,10 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <list>
+      <item itemvalue="Makefile Target.all" />
+      <item itemvalue="Python.humanTracking" />
+    </list>
   </component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="SvnConfiguration">
@@ -150,8 +155,7 @@
       <option name="presentableId" value="Default" />
       <updated>1630379749309</updated>
       <workItem from="1632197696336" duration="9340000" />
-      <workItem from="1632280103489" duration="1106000" />
-      <workItem from="1632281227569" duration="6167000" />
+      <workItem from="1632338525960" duration="3943000" />
     </task>
     <task id="LOCAL-00001" summary="Added some imports that are going to be used.">
       <created>1630388349862</created>
