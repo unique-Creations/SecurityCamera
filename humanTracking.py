@@ -1,6 +1,6 @@
 import tensorflow as tf
 import matplotlib as plt
-import Jetson.GPIO as GPIO
+# import Jetson.GPIO as GPIO
 
 # For drawing onto the image.
 import numpy as np
