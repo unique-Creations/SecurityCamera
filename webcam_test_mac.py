@@ -1,24 +1,22 @@
+'''
+Title:
+Author:
+Date:
+Code version:
+Availability: https://pythonprogramming.net/video-tensorflow-object-detection-api-tutorial/
+'''
 import numpy as np
 import os
 import six.moves.urllib as urllib
-import sys
 import tarfile
 import tensorflow as tf
-import zipfile
-
-from collections import defaultdict
-from io import StringIO
-from matplotlib import pyplot as plt
-from PIL import Image
-
 import cv2
-
 cap = cv2.VideoCapture(0)
 
 from Tensorflow.models.research.object_detection.utils import label_map_util
 from Tensorflow.models.research.object_detection.utils import visualization_utils as vis_util
 
-MODEL_NAME = 'ssd_mobilenet_v1_coco_11_06_2017'
+MODEL_NAME = 'ssd_mobilenet_v1_coco_2018_01_28'
 MODEL_FILE = MODEL_NAME + '.tar.gz'
 DOWNLOAD_BASE = 'http://download.tensorflow.org/models/object_detection/'
 
@@ -51,23 +49,17 @@ categories = label_map_util.convert_label_map_to_categories(label_map, max_num_c
 category_index = label_map_util.create_category_index(categories)
 
 
-def load_image_into_numpy_array(image):
-    (im_width, im_height) = image.size
-    return np.array(image.getdata()).reshape(
-        (im_height, im_width, 3)).astype(np.uint8)
+def person_counter(score, classes):
+    final_score = np.squeeze(score)
+    count = 0
+    for i in range(100):
+        if classes == b'person':
+            if scores is None or final_score[i] > 0.5:
+                count = count + 1
+    return count
 
 
 # # Detection
-
-# For the sake of simplicity we will use only 2 images:
-# image1.jpg
-# image2.jpg
-# If you want to test the code with your images, just add path to the images to the TEST_IMAGE_PATHS.
-PATH_TO_TEST_IMAGES_DIR = 'test_images'
-TEST_IMAGE_PATHS = [os.path.join(PATH_TO_TEST_IMAGES_DIR, 'image{}.jpg'.format(i)) for i in range(1, 3)]
-
-# Size, in inches, of the output images.
-IMAGE_SIZE = (12, 8)
 
 with detection_graph.as_default():
     with tf.compat.v1.Session(graph=detection_graph) as sess:
@@ -83,6 +75,7 @@ with detection_graph.as_default():
             scores = detection_graph.get_tensor_by_name('detection_scores:0')
             classes = detection_graph.get_tensor_by_name('detection_classes:0')
             num_detections = detection_graph.get_tensor_by_name('num_detections:0')
+
             # Actual detection.
             (boxes, scores, classes, num_detections) = sess.run(
                 [boxes, scores, classes, num_detections],
@@ -95,9 +88,29 @@ with detection_graph.as_default():
                 np.squeeze(scores),
                 category_index,
                 use_normalized_coordinates=True,
-                line_thickness=8)
+                line_thickness=6)
 
-            cv2.imshow('object detection', cv2.resize(image_np, (800, 600)))
+            objects = []
+            for index, value in enumerate(classes[0]):
+                object_dict = {}
+                if scores[0, index] > .5:
+                    object_dict[(category_index.get(value)).get('name').encode('utf8')] = \
+                        scores[0, index]
+                    objects.append(object_dict)
+            # TODO: get width and height of image
+            width, height = image_np_expanded.shape[:2]
+            true_boxes = boxes[0][scores[0] > .5]
+            for i in range(true_boxes.shape[0]):
+                ymin = true_boxes[i, 0] * height
+                xmin = true_boxes[i, 1] * width
+                ymax = true_boxes[i, 2] * height
+                xmax = true_boxes[i, 3] * width
+                print("Top left")
+                print(xmin, ymin, )
+                print("Bottom right")
+                print(xmax, ymax)
+            print(person_counter(score=scores, classes=(category_index.get(value)).get('name').encode('utf8')))
+            cv2.imshow('object detection', cv2.resize(image_np, (900, 800)))
             if cv2.waitKey(25) & 0xFF == ord('q'):
                 cv2.destroyAllWindows()
                 break
