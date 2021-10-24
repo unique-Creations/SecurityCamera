@@ -90,7 +90,7 @@ def move_down():
 
 if __name__ == "__main__":
     # set_pin_out(pin_list)
-
+    command = None
     while command != "q":
         command = input("Enter command (q to quit):")
         if command == "l":
