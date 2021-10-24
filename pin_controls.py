@@ -41,16 +41,21 @@ pin_list = [lt_en_pin, lt_s_pin,
             up_en_pin, up_s_pin,
             dn_en_pin, dn_s_pin,
             led_pin]
+pin_en_list = [lt_en_pin, rt_en_pin, up_en_pin, dn_en_pin]
+pin_s_list = [lt_s_pin, rt_s_pin, up_s_pin, dn_s_pin]
+
+# Set the pins in the list as output pins with initial signals set to low.
+GPIO.setup(pin_list, GPIO.OUT, initial=GPIO.LOW)
 
 
-def set_pin_out(pins: list):
-    """
-    Set the pins in the list as output pins with initial signals set to low.
-
-    :param pins: list of pins
-    """
-    for pin in pins:
-        GPIO.setup(pin, GPIO.OUT, initial=GPIO.LOW)
+# def set_pin_out(pins: list):
+#     """
+#     Set the pins in the list as output pins with initial signals set to low.
+#
+#     :param pins: list of pins
+#     """
+#     for pin in pins:
+#         GPIO.setup(pin, GPIO.OUT, initial=GPIO.LOW)
 
 
 def led_on():
@@ -63,36 +68,39 @@ def led_off():
     GPIO.output(led_pin, GPIO.LOW)
 
 
+def move_left():
+    """Turn system left"""
+    GPIO.output(pin_en_list, (GPIO.HIGH, GPIO.LOW, GPIO.LOW, GPIO.LOW))
+
+
+def move_right():
+    """Turn system right"""
+    GPIO.output(pin_en_list, (GPIO.LOW, GPIO.HIGH, GPIO.LOW, GPIO.LOW))
+
+
+def move_up():
+    """Turn system up"""
+    GPIO.output(pin_en_list, (GPIO.LOW, GPIO.LOW, GPIO.HIGH, GPIO.LOW))
+
+
+def move_down():
+    """Turn system down"""
+    GPIO.output(pin_en_list, (GPIO.LOW, GPIO.LOW, GPIO.LOW, GPIO.HIGH))
+
+
 if __name__ == "__main__":
-    set_pin_out(pin_list)
+    # set_pin_out(pin_list)
 
     while command != "q":
         command = input("Enter command (q to quit):")
         if command == "l":
-            GPIO.output(up_en_pin, GPIO.HIGH)
-            GPIO.output(dn_en_pin, GPIO.LOW)
-            GPIO.output(lt_en_pin, GPIO.HIGH)
-            GPIO.output(rt_en_pin, GPIO.LOW)
+            move_left()
         elif command == "r":
-            GPIO.output(up_en_pin, GPIO.LOW)
-            GPIO.output(dn_en_pin, GPIO.LOW)
-            GPIO.output(lt_en_pin, GPIO.LOW)
-            GPIO.output(rt_en_pin, GPIO.HIGH)
+            move_right()
         elif command == "u":
-            GPIO.output(up_en_pin, GPIO.HIGH)
-            GPIO.output(dn_en_pin, GPIO.LOW)
-            GPIO.output(lt_en_pin, GPIO.LOW)
-            GPIO.output(rt_en_pin, GPIO.LOW)
+            move_up()
         elif command == "d":
-            GPIO.output(up_en_pin, GPIO.LOW)
-            GPIO.output(dn_en_pin, GPIO.HIGH)
-            GPIO.output(lt_en_pin, GPIO.LOW)
-            GPIO.output(rt_en_pin, GPIO.LOW)
-    GPIO.output(lt_en_pin, GPIO.LOW)
-    GPIO.output(rt_en_pin, GPIO.LOW)
-    GPIO.output(up_en_pin, GPIO.LOW)
-    GPIO.output(dn_en_pin, GPIO.LOW)
-    GPIO.cleanup(lt_en_pin)
-    GPIO.cleanup(rt_en_pin)
-    GPIO.cleanup(up_en_pin)
-    GPIO.cleanup(dn_en_pin)
+            move_down()
+
+    GPIO.output(pin_list, GPIO.LOW)
+    GPIO.cleanup()
