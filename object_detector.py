@@ -35,8 +35,8 @@ def gstreamer_pipeline(capture_width=3280, capture_height=2464, display_width=82
     )
 
 
-cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
-
+if not cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER).isOpened():
+    cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
 
 label_map = machine_learning.get_label_map()
 categories = machine_learning.get_categories()
