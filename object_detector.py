@@ -1,10 +1,11 @@
+import cv2
 import numpy as np
 import tensorflow as tf
 import pin_controls as pins
 import machine_learning
 
 from Tensorflow.models.research.object_detection.utils import visualization_utils as vis_util
-import cv2
+
 
 # gstreamer_pipeline returns a GStreamer pipeline for capturing from camera
 # Defaults to 1280x720 @ 30fps
