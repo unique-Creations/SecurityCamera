@@ -16,14 +16,25 @@ category_index = machine_learning.get_category_idx()
 detection_graph = machine_learning.get_detect_graph()
 
 
-def person_counter(score, name, scores):
-    final_score = np.squeeze(score)
+def person_counter(obj_list):
     count = 0
-    for i in range(100):
-        if name == 'person':
-            if scores is None or final_score[i] > 0.5:
-                count = count + 1
+    for obj in obj_list:
+        if obj == 1:
+            count += 1
     return count
+
+
+def get_categ_names(classes, scores):
+    objects = []
+    threshold = 0.5
+    for index, value in enumerate(classes[0]):
+        if scores[0, index] > threshold:
+            name = (category_index.get(value)).get('name')
+            if name == 'person':
+                objects.append(1)
+            else:
+                objects.append(0)
+    return objects
 
 
 def person_coordinates(score, image, boxes):
@@ -39,7 +50,6 @@ def person_coordinates(score, image, boxes):
         y_max = "{:.2f}".format(y_max)
         x_max = true_boxes[i, 3] * width
         x_max = "{:.2f}".format(x_max)
-
         print(f'Top left: {x_min, y_min}')
         print(f'Bottom right: {x_max, y_max}')
 
@@ -77,8 +87,10 @@ def main():
                 cx, cy = (w // 2, h // 2)
                 person_coordinates(scores, image, boxes)
                 print(f'Center: {cx, cy}')
+                objects = get_categ_names(classes, scores)
+                print(objects)
                 # TODO: Get category names of all boxes in frame.
-                # print(person_counter(score=scores, name=(category_index.keys()).get('name')), scores)
+                print(person_counter(objects))
                 webcam_test_mac.cv2.imshow('object detection', webcam_test_mac.cv2.resize(image, (900, 800)))
                 if webcam_test_mac.cv2.waitKey(25) & 0xFF == ord('q'):
                     webcam_test_mac.cv2.destroyAllWindows()

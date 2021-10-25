@@ -44,14 +44,25 @@ category_index = machine_learning.get_category_idx()
 detection_graph = machine_learning.get_detect_graph()
 
 
-def person_counter(score, name, scores):
-    final_score = np.squeeze(score)
+def person_counter(obj_list):
     count = 0
-    for i in range(100):
-        if name == 'person':
-            if scores is None or final_score[i] > 0.5:
-                count = count + 1
+    for obj in obj_list:
+        if obj == 1:
+            count += 1
     return count
+
+
+def get_categ_names(classes, scores):
+    objects = []
+    threshold = 0.5
+    for index, value in enumerate(classes[0]):
+        if scores[0, index] > threshold:
+            name = (category_index.get(value)).get('name')
+            if name == 'person':
+                objects.append(1)
+            else:
+                objects.append(0)
+    return objects
 
 
 def person_coordinates(score, image, boxes):
@@ -105,10 +116,12 @@ def main():
                 cx, cy = (w // 2, h // 2)
                 person_coordinates(scores, image, boxes)
                 print(f'Center: {cx, cy}')
+                objects = get_categ_names(classes, scores)
+                print(objects)
                 # TODO: Get category names of all boxes in frame.
-
+                print(person_counter(objects))
                 # print(person_counter(score=scores, name=(category_index.keys()).get('name')), scores)
-                if person_counter(person_counter(score=scores, name=(category_index.keys()).get('name'))) > 0:
+                if person_counter(objects) > 0:
                     pins.led_on()
                 else:
                     pins.led_off()
