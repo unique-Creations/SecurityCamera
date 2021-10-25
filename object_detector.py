@@ -100,9 +100,13 @@ def main():
                 num_detections = detection_graph.get_tensor_by_name('num_detections:0')
 
                 # Actual detection.
-                (boxes, scores, classes, num_detections) = sess.run(
-                    [boxes, scores, classes, num_detections],
-                    feed_dict={image_tensor: image_np_expanded})
+                try:
+                    (boxes, scores, classes, num_detections) = sess.run(
+                        [boxes, scores, classes, num_detections],
+                        feed_dict={image_tensor: image_np_expanded})
+                except TypeError:
+                    cap.release()
+                    print("TypeError: Capture released.")
                 # Visualization of the results of a detection.
                 vis_util.visualize_boxes_and_labels_on_image_array(
                     image,
