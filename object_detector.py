@@ -1,13 +1,12 @@
-import cv2
 import numpy as np
-import os
-import six.moves.urllib as urllib
-import tarfile
 import tensorflow as tf
+import pin_controls as pins
+import machine_learning
 
-from Tensorflow.models.research.object_detection.utils import label_map_util
 from Tensorflow.models.research.object_detection.utils import visualization_utils as vis_util
-# gstreamer_pipeline returns a GStreamer pipeline for capturing from the CSI camera
+import cv2
+
+# gstreamer_pipeline returns a GStreamer pipeline for capturing from camera
 # Defaults to 1280x720 @ 30fps
 # Flip the image by setting the flip_method (most common values: 0 and 2)
 # display_width and display_height determine the size of the window on the screen
@@ -37,49 +36,48 @@ def gstreamer_pipeline(capture_width=3280, capture_height=2464, display_width=82
 
 cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
 
-MODEL_NAME = 'ssd_mobilenet_v1_coco_2018_01_28'
-MODEL_FILE = MODEL_NAME + '.tar.gz'
-DOWNLOAD_BASE = 'http://download.tensorflow.org/models/object_detection/'
 
-PATH_TO_CKPT = MODEL_NAME + '/frozen_inference_graph.pb'
+label_map = machine_learning.get_label_map()
+categories = machine_learning.get_categories()
+category_index = machine_learning.get_category_idx()
+detection_graph = machine_learning.get_detect_graph()
 
-PATH_TO_LABELS = os.path.join('Tensorflow/models/research/object_detection/data', 'mscoco_label_map.pbtxt')
 
-# Number of classes to retrieve from the mscoco label map.
-NUM_CLASSES = 2
-# lower the amount of memory utilized by TensorFlow
-gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.2)
-opener = urllib.request.URLopener()
-opener.retrieve(DOWNLOAD_BASE + MODEL_FILE, MODEL_FILE)
-tar_file = tarfile.open(MODEL_FILE)
-for file in tar_file.getmembers():
+def person_counter(score, name, scores):
+    final_score = np.squeeze(score)
+    count = 0
+    for i in range(100):
+        if name == 'person':
+            if scores is None or final_score[i] > 0.5:
+                count = count + 1
+    return count
 
-    file_name = os.path.basename(file.name)
-    if 'frozen_inference_graph.pb' in file_name:
-        tar_file.extract(file, os.getcwd())
 
-detection_graph = tf.Graph()
-with detection_graph.as_default():
-    od_graph_def = tf.compat.v1.GraphDef()
-    with tf.compat.v2.io.gfile.GFile(PATH_TO_CKPT, 'rb') as fid:
-        serialized_graph = fid.read()
-        od_graph_def.ParseFromString(serialized_graph)
-        tf.import_graph_def(od_graph_def, name='')
+def person_coordinates(score, image, boxes):
+    # TODO: Check Accuracy of coordinates
+    width, height = image.shape[:2]
+    true_boxes = boxes[0][score[0] > .5]
+    for i in range(true_boxes.shape[0]):
+        y_min = true_boxes[i, 0] * height
+        y_min = "{:.2f}".format(y_min)
+        x_min = true_boxes[i, 1] * width
+        x_min = "{:.2f}".format(x_min)
+        y_max = true_boxes[i, 2] * height
+        y_max = "{:.2f}".format(y_max)
+        x_max = true_boxes[i, 3] * width
+        x_max = "{:.2f}".format(x_max)
 
-label_map = label_map_util.load_labelmap(PATH_TO_LABELS)
-categories = label_map_util.convert_label_map_to_categories(label_map, max_num_classes=NUM_CLASSES,
-                                                            use_display_name=True)
-category_index = label_map_util.create_category_index(categories)
+        print(f'Top left: {x_min, y_min}')
+        print(f'Bottom right: {x_max, y_max}')
 
-# Detection
-if __name__ == "__main__":
+
+def main():
     with detection_graph.as_default():
-        with tf.compat.v1.Session(graph=detection_graph,
-                                  config=tf.compat.v1.ConfigProto(gpu_options=gpu_options)) as sess:
+        with tf.compat.v1.Session(graph=detection_graph) as sess:
             while True:
-                ret, image_np = cap.read()
+                ret, image = cap.read()
                 # Expand dimensions since the model expects images to have shape: [1, None, None, 3]
-                image_np_expanded = np.expand_dims(image_np, axis=0)
+                image_np_expanded = np.expand_dims(image, axis=0)
                 image_tensor = detection_graph.get_tensor_by_name('image_tensor:0')
                 # Each box represents a part of the image where a particular object was detected.
                 boxes = detection_graph.get_tensor_by_name('detection_boxes:0')
@@ -88,23 +86,38 @@ if __name__ == "__main__":
                 scores = detection_graph.get_tensor_by_name('detection_scores:0')
                 classes = detection_graph.get_tensor_by_name('detection_classes:0')
                 num_detections = detection_graph.get_tensor_by_name('num_detections:0')
+
                 # Actual detection.
                 (boxes, scores, classes, num_detections) = sess.run(
                     [boxes, scores, classes, num_detections],
                     feed_dict={image_tensor: image_np_expanded})
                 # Visualization of the results of a detection.
                 vis_util.visualize_boxes_and_labels_on_image_array(
-                    image_np,
+                    image,
                     np.squeeze(boxes),
                     np.squeeze(classes).astype(np.int32),
                     np.squeeze(scores),
                     category_index,
                     use_normalized_coordinates=True,
-                    line_thickness=8)
+                    line_thickness=2)
+                (h, w) = image.shape[:2]
+                cx, cy = (w // 2, h // 2)
+                person_coordinates(scores, image, boxes)
+                print(f'Center: {cx, cy}')
+                # TODO: Get category names of all boxes in frame.
 
-                cv2.imshow('object detection', cv2.resize(image_np, (800, 600)))
-                keycode = cv2.wait_key(30) & 0xFF
-                if keycode == 27:
+                # print(person_counter(score=scores, name=(category_index.keys()).get('name')), scores)
+                if person_counter(person_counter(score=scores, name=(category_index.keys()).get('name'))) > 0:
+                    pins.led_on()
+                else:
+                    pins.led_off()
+
+                # cv2.imshow('object detection', cv2.resize(image, (900, 800)))
+                if cv2.waitKey(25) & 0xFF == ord('q'):
+                    cap.release()
+                    cv2.destroyAllWindows()
                     break
-            cap.release()
-            cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main()

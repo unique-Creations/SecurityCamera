@@ -1,10 +1,11 @@
 """
-@author: Ernesto Ruiz
+:Author: Ernesto Ruiz
 
-simple GPIO tester
-1. set mode
-2. set channel as input or output
-3. set state if output else read state if input.
+Jetson Nano pin setup and control
+
+1. sets mode
+2. sets channel as input or output
+3. sets state if output else read state if input.
 
 """
 
@@ -48,16 +49,6 @@ pin_s_list = [lt_s_pin, rt_s_pin, up_s_pin, dn_s_pin]
 GPIO.setup(pin_list, GPIO.OUT, initial=GPIO.LOW)
 
 
-# def set_pin_out(pins: list):
-#     """
-#     Set the pins in the list as output pins with initial signals set to low.
-#
-#     :param pins: list of pins
-#     """
-#     for pin in pins:
-#         GPIO.setup(pin, GPIO.OUT, initial=GPIO.LOW)
-
-
 def led_on():
     """Sends a high signal on LED pin 7, which turns on the LED."""
     GPIO.output(led_pin, GPIO.HIGH)
@@ -88,19 +79,17 @@ def move_down():
     GPIO.output(pin_en_list, (GPIO.LOW, GPIO.LOW, GPIO.LOW, GPIO.HIGH))
 
 
-if __name__ == "__main__":
-    # set_pin_out(pin_list)
-    command = None
-    while command != "q":
-        command = input("Enter command (q to quit):")
-        if command == "l":
-            move_left()
-        elif command == "r":
-            move_right()
-        elif command == "u":
-            move_up()
-        elif command == "d":
-            move_down()
-
-    GPIO.output(pin_list, GPIO.LOW)
-    GPIO.cleanup()
+# if __name__ == "__main__":
+#     command = None
+#     while command != "q":
+#         command = input("Enter command (q to quit):")
+#         if command == "l":
+#             move_left()
+#         elif command == "r":
+#             move_right()
+#         elif command == "u":
+#             move_up()
+#         elif command == "d":
+#             move_down()
+#     GPIO.output(pin_list, GPIO.LOW)
+#     GPIO.cleanup()

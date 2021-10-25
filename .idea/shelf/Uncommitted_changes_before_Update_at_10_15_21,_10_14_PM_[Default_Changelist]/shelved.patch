@@ -1,0 +1,789 @@
+Index: camera_stream.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import cv2\n\n\n# gstreamer_pipeline returns a GStreamer pipeline for capturing from the CSI camera\n# Defaults to 1280x720 @ 30fps\n# Flip the image by setting the flip_method (most common values: 0 and 2)\n# display_width and display_height determine the size of the window on the screen\n\n\ndef gstreamer_pipeline(capture_width=3280, capture_height=2464, display_width=820, display_height=616, framerate=21,\n                       flip_method=0):\n    return (\n            \"nvarguscamerasrc ! \"\n            \"video/x-raw(memory:NVMM), \"\n            \"width=(int)%d, height=(int)%d, \"\n            \"format=(string)NV12, framerate=(fraction)%d/1 ! \"\n            \"nvvidconv flip-method=%d ! \"\n            \"video/x-raw, width=(int)%d, height=(int)%d, format=(string)BGRx ! \"\n            \"videoconvert ! \"\n            \"video/x-raw, format=(string)BGR ! appsink\"\n            % (\n                capture_width,\n                capture_height,\n                framerate,\n                flip_method,\n                display_width,\n                display_height,\n            )\n    )\n\n\ndef get_vid_stream():\n    '''\n    Getter for the captured video using OpenCV2\n    :return: video captured\n    '''\n\n    return cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)\n\ndef exit():\n    get_vid_stream().release()\n    get_vid_stream().destroyAllWindows()
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/camera_stream.py b/camera_stream.py
+--- a/camera_stream.py	(revision 3ba62f82570e75d0f3df9d1a1f1fc5ad7d5e9828)
++++ b/camera_stream.py	(date 1634236608916)
+@@ -7,8 +7,14 @@
+ # display_width and display_height determine the size of the window on the screen
+ 
+ 
+-def gstreamer_pipeline(capture_width=3280, capture_height=2464, display_width=820, display_height=616, framerate=21,
+-                       flip_method=0):
++def gstreamer_pipeline(
++        capture_width=3280,
++        capture_height=2464,
++        display_width=820,
++        display_height=616,
++        framerate=21,
++        flip_method=0,
++):
+     return (
+             "nvarguscamerasrc ! "
+             "video/x-raw(memory:NVMM), "
+@@ -29,14 +35,23 @@
+     )
+ 
+ 
+-def get_vid_stream():
+-    '''
+-    Getter for the captured video using OpenCV2
+-    :return: video captured
+-    '''
++def face_detect():
++    cap = cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
++    if cap.isOpened():
++        cv2.namedWindow("Face Detect", cv2.WINDOW_AUTOSIZE)
++        while cv2.getWindowProperty("Face Detect", 0) >= 0:
++            ret, img = cap.read()
++            cv2.imshow("Face Detect", img)
++            keyCode = cv2.waitKey(30) & 0xFF
++            # Stop the program on the ESC key
++            if keyCode == 27:
++                break
+ 
+-    return cv2.VideoCapture(gstreamer_pipeline(), cv2.CAP_GSTREAMER)
++        cap.release()
++        cv2.destroyAllWindows()
++    else:
++        print("Unable to open camera")
+ 
+-def exit():
+-    get_vid_stream().release()
+-    get_vid_stream().destroyAllWindows()
+\ No newline at end of file
++
++if __name__ == "__main__":
++    face_detect()
+Index: humanTracking.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import numpy as np\nimport os\nimport six.moves.urllib as urllib\nimport tarfile\nimport tensorflow as tf\nimport camera_stream\nimport cv2\n\nfrom Tensorflow.models.research.object_detection.utils import label_map_util\nfrom Tensorflow.models.research.object_detection.utils import visualization_utils as vis_util\n\ncap = camera_stream.get_vid_stream()\n\nMODEL_NAME = 'ssd_mobilenet_v1_coco_2018_01_28'\nMODEL_FILE = MODEL_NAME + '.tar.gz'\nDOWNLOAD_BASE = 'http://download.tensorflow.org/models/object_detection/'\n\nPATH_TO_CKPT = MODEL_NAME + '/frozen_inference_graph.pb'\n\nPATH_TO_LABELS = os.path.join('Tensorflow/models/research/object_detection/data', 'mscoco_label_map.pbtxt')\n\n# Number of classes to retrieve from the mscoco label map.\nNUM_CLASSES = 2\n# lower the amount of memory utilized by TensorFlow\ngpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.2)\nopener = urllib.request.URLopener()\nopener.retrieve(DOWNLOAD_BASE + MODEL_FILE, MODEL_FILE)\ntar_file = tarfile.open(MODEL_FILE)\nfor file in tar_file.getmembers():\n\n    file_name = os.path.basename(file.name)\n    if 'frozen_inference_graph.pb' in file_name:\n        tar_file.extract(file, os.getcwd())\n\ndetection_graph = tf.Graph()\nwith detection_graph.as_default():\n    od_graph_def = tf.compat.v1.GraphDef()\n    with tf.compat.v2.io.gfile.GFile(PATH_TO_CKPT, 'rb') as fid:\n        serialized_graph = fid.read()\n        od_graph_def.ParseFromString(serialized_graph)\n        tf.import_graph_def(od_graph_def, name='')\n\nlabel_map = label_map_util.load_labelmap(PATH_TO_LABELS)\ncategories = label_map_util.convert_label_map_to_categories(label_map, max_num_classes=NUM_CLASSES,\n                                                            use_display_name=True)\ncategory_index = label_map_util.create_category_index(categories)\n\n# Detection\nif __name__ == \"__main__\":\n    with detection_graph.as_default():\n        with tf.compat.v1.Session(graph=detection_graph,\n                                  config=tf.compat.v1.ConfigProto(gpu_options=gpu_options)) as sess:\n            while True:\n                ret, image_np = cap.read()\n                # Expand dimensions since the model expects images to have shape: [1, None, None, 3]\n                image_np_expanded = np.expand_dims(image_np, axis=0)\n                image_tensor = detection_graph.get_tensor_by_name('image_tensor:0')\n                # Each box represents a part of the image where a particular object was detected.\n                boxes = detection_graph.get_tensor_by_name('detection_boxes:0')\n                # Each score represent how level of confidence for each of the objects.\n                # Score is shown on the result image, together with the class label.\n                scores = detection_graph.get_tensor_by_name('detection_scores:0')\n                classes = detection_graph.get_tensor_by_name('detection_classes:0')\n                num_detections = detection_graph.get_tensor_by_name('num_detections:0')\n                # Actual detection.\n                (boxes, scores, classes, num_detections) = sess.run(\n                    [boxes, scores, classes, num_detections],\n                    feed_dict={image_tensor: image_np_expanded})\n                # Visualization of the results of a detection.\n                vis_util.visualize_boxes_and_labels_on_image_array(\n                    image_np,\n                    np.squeeze(boxes),\n                    np.squeeze(classes).astype(np.int32),\n                    np.squeeze(scores),\n                    category_index,\n                    use_normalized_coordinates=True,\n                    line_thickness=8)\n\n                cv2.imshow('object detection', cv2.resize(image_np, (800, 600)))\n                keycode = cv2.waitKey(30) & 0xFF\n                if keycode == 27:\n                    break\n            camera_stream.exit()\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/humanTracking.py b/humanTracking.py
+--- a/humanTracking.py	(revision 3ba62f82570e75d0f3df9d1a1f1fc5ad7d5e9828)
++++ b/humanTracking.py	(date 1634236748584)
+@@ -1,83 +1,17 @@
+-import numpy as np
+-import os
+-import six.moves.urllib as urllib
+-import tarfile
+ import tensorflow as tf
+-import camera_stream
++import matplotlib as plt
++# import Jetson.GPIO as GPIO
++
++# For drawing onto the image.
++import numpy as np
++from PIL import Image
++from PIL import ImageColor
++from PIL import ImageDraw
++from PIL import ImageFont
++from PIL import ImageOps
+ import cv2
+ 
+-from Tensorflow.models.research.object_detection.utils import label_map_util
+-from Tensorflow.models.research.object_detection.utils import visualization_utils as vis_util
+-
+-cap = camera_stream.get_vid_stream()
++# For measuring the inference time.
++import time
++import webcam_test_mac
+ 
+-MODEL_NAME = 'ssd_mobilenet_v1_coco_2018_01_28'
+-MODEL_FILE = MODEL_NAME + '.tar.gz'
+-DOWNLOAD_BASE = 'http://download.tensorflow.org/models/object_detection/'
+-
+-PATH_TO_CKPT = MODEL_NAME + '/frozen_inference_graph.pb'
+-
+-PATH_TO_LABELS = os.path.join('Tensorflow/models/research/object_detection/data', 'mscoco_label_map.pbtxt')
+-
+-# Number of classes to retrieve from the mscoco label map.
+-NUM_CLASSES = 2
+-# lower the amount of memory utilized by TensorFlow
+-gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.2)
+-opener = urllib.request.URLopener()
+-opener.retrieve(DOWNLOAD_BASE + MODEL_FILE, MODEL_FILE)
+-tar_file = tarfile.open(MODEL_FILE)
+-for file in tar_file.getmembers():
+-
+-    file_name = os.path.basename(file.name)
+-    if 'frozen_inference_graph.pb' in file_name:
+-        tar_file.extract(file, os.getcwd())
+-
+-detection_graph = tf.Graph()
+-with detection_graph.as_default():
+-    od_graph_def = tf.compat.v1.GraphDef()
+-    with tf.compat.v2.io.gfile.GFile(PATH_TO_CKPT, 'rb') as fid:
+-        serialized_graph = fid.read()
+-        od_graph_def.ParseFromString(serialized_graph)
+-        tf.import_graph_def(od_graph_def, name='')
+-
+-label_map = label_map_util.load_labelmap(PATH_TO_LABELS)
+-categories = label_map_util.convert_label_map_to_categories(label_map, max_num_classes=NUM_CLASSES,
+-                                                            use_display_name=True)
+-category_index = label_map_util.create_category_index(categories)
+-
+-# Detection
+-if __name__ == "__main__":
+-    with detection_graph.as_default():
+-        with tf.compat.v1.Session(graph=detection_graph,
+-                                  config=tf.compat.v1.ConfigProto(gpu_options=gpu_options)) as sess:
+-            while True:
+-                ret, image_np = cap.read()
+-                # Expand dimensions since the model expects images to have shape: [1, None, None, 3]
+-                image_np_expanded = np.expand_dims(image_np, axis=0)
+-                image_tensor = detection_graph.get_tensor_by_name('image_tensor:0')
+-                # Each box represents a part of the image where a particular object was detected.
+-                boxes = detection_graph.get_tensor_by_name('detection_boxes:0')
+-                # Each score represent how level of confidence for each of the objects.
+-                # Score is shown on the result image, together with the class label.
+-                scores = detection_graph.get_tensor_by_name('detection_scores:0')
+-                classes = detection_graph.get_tensor_by_name('detection_classes:0')
+-                num_detections = detection_graph.get_tensor_by_name('num_detections:0')
+-                # Actual detection.
+-                (boxes, scores, classes, num_detections) = sess.run(
+-                    [boxes, scores, classes, num_detections],
+-                    feed_dict={image_tensor: image_np_expanded})
+-                # Visualization of the results of a detection.
+-                vis_util.visualize_boxes_and_labels_on_image_array(
+-                    image_np,
+-                    np.squeeze(boxes),
+-                    np.squeeze(classes).astype(np.int32),
+-                    np.squeeze(scores),
+-                    category_index,
+-                    use_normalized_coordinates=True,
+-                    line_thickness=8)
+-
+-                cv2.imshow('object detection', cv2.resize(image_np, (800, 600)))
+-                keycode = cv2.waitKey(30) & 0xFF
+-                if keycode == 27:
+-                    break
+-            camera_stream.exit()
+Index: .gitignore
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+># Byte-compiled / optimized / DLL files\n__pycache__/\n*.py[cod]\n*$py.class\n\n# C extensions\n*.so\n\n# Distribution / packaging\n.Python\nbuild/\ndevelop-eggs/\ndist/\ndownloads/\neggs/\n.eggs/\nlib/\nlib64/\nparts/\nsdist/\nvar/\nwheels/\npip-wheel-metadata/\nshare/python-wheels/\n*.egg-info/\n.installed.cfg\n*.egg\nMANIFEST\n\n# PyInstaller\n#  Usually these files are written by a python script from a template\n#  before PyInstaller builds the exe, so as to inject date/other infos into it.\n*.manifest\n*.spec\n\n# Installer logs\npip-log.txt\npip-delete-this-directory.txt\n\n# Unit test / coverage reports\nhtmlcov/\n.tox/\n.nox/\n.coverage\n.coverage.*\n.cache\nnosetests.xml\ncoverage.xml\n*.cover\n*.py,cover\n.hypothesis/\n.pytest_cache/\n\n# Translations\n*.mo\n*.pot\n\n# Django stuff:\n*.log\nlocal_settings.py\ndb.sqlite3\ndb.sqlite3-journal\n\n# Flask stuff:\ninstance/\n.webassets-cache\n\n# Scrapy stuff:\n.scrapy\n\n# Sphinx documentation\ndocs/_build/\n\n# PyBuilder\ntarget/\n\n# Jupyter Notebook\n.ipynb_checkpoints\n*/.ipynb_checkpoints/*\n\n# IPython\nprofile_default/\nipython_config.py\n\n# pyenv\n.python-version\n\n# pipenv\n#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.\n#   However, in case of collaboration, if having platform-specific dependencies or dependencies\n#   having no cross-platform support, pipenv may install dependencies that don't work, or not\n#   install all needed dependencies.\n#Pipfile.lock\n\n# PEP 582; used by e.g. github.com/David-OConnor/pyflow\n__pypackages__/\n\n# Celery stuff\ncelerybeat-schedule\ncelerybeat.pid\n\n# SageMath parsed files\n*.sage.py\n\n# Environments\n.env\n.venv\nenv/\nvenv/\nENV/\nenv.bak/\nvenv.bak/\n\n# Spyder project settings\n.spyderproject\n.spyproject\n\n# Rope project settings\n.ropeproject\n\n# mkdocs documentation\n/site\n\n# mypy\n.mypy_cache/\n.dmypy.json\ndmypy.json\n\n# Pyre type checker\n.pyre/\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.gitignore b/.gitignore
+--- a/.gitignore	(revision 3ba62f82570e75d0f3df9d1a1f1fc5ad7d5e9828)
++++ b/.gitignore	(date 1634236649272)
+@@ -74,9 +74,6 @@
+ # PyBuilder
+ target/
+ 
+-# Jupyter Notebook
+-.ipynb_checkpoints
+-*/.ipynb_checkpoints/*
+ 
+ # IPython
+ profile_default/
+Index: webcam_test_mac.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import numpy as np\nimport os\nimport six.moves.urllib as urllib\nimport sys\nimport tarfile\nimport tensorflow as tf\nimport zipfile\n\nfrom collections import defaultdict\nfrom io import StringIO\nfrom matplotlib import pyplot as plt\nfrom PIL import Image\n\nimport cv2\n\ncap = cv2.VideoCapture(0)\n\nfrom Tensorflow.models.research.object_detection.utils import label_map_util\nfrom Tensorflow.models.research.object_detection.utils import visualization_utils as vis_util\n\nMODEL_NAME = 'ssd_mobilenet_v1_coco_11_06_2017'\nMODEL_FILE = MODEL_NAME + '.tar.gz'\nDOWNLOAD_BASE = 'http://download.tensorflow.org/models/object_detection/'\n\nPATH_TO_CKPT = MODEL_NAME + '/frozen_inference_graph.pb'\n\nPATH_TO_LABELS = os.path.join('Tensorflow/models/research/object_detection/data', 'mscoco_label_map.pbtxt')\n\nNUM_CLASSES = 90\n\nopener = urllib.request.URLopener()\nopener.retrieve(DOWNLOAD_BASE + MODEL_FILE, MODEL_FILE)\ntar_file = tarfile.open(MODEL_FILE)\nfor file in tar_file.getmembers():\n\n    file_name = os.path.basename(file.name)\n    if 'frozen_inference_graph.pb' in file_name:\n        tar_file.extract(file, os.getcwd())\n\ndetection_graph = tf.Graph()\nwith detection_graph.as_default():\n    od_graph_def = tf.compat.v1.GraphDef()\n    with tf.compat.v2.io.gfile.GFile(PATH_TO_CKPT, 'rb') as fid:\n        serialized_graph = fid.read()\n        od_graph_def.ParseFromString(serialized_graph)\n        tf.import_graph_def(od_graph_def, name='')\n\nlabel_map = label_map_util.load_labelmap(PATH_TO_LABELS)\ncategories = label_map_util.convert_label_map_to_categories(label_map, max_num_classes=NUM_CLASSES,\n                                                            use_display_name=True)\ncategory_index = label_map_util.create_category_index(categories)\n\n\ndef load_image_into_numpy_array(image):\n    (im_width, im_height) = image.size\n    return np.array(image.getdata()).reshape(\n        (im_height, im_width, 3)).astype(np.uint8)\n\n\n# # Detection\n\n# For the sake of simplicity we will use only 2 images:\n# image1.jpg\n# image2.jpg\n# If you want to test the code with your images, just add path to the images to the TEST_IMAGE_PATHS.\nPATH_TO_TEST_IMAGES_DIR = 'test_images'\nTEST_IMAGE_PATHS = [os.path.join(PATH_TO_TEST_IMAGES_DIR, 'image{}.jpg'.format(i)) for i in range(1, 3)]\n\n# Size, in inches, of the output images.\nIMAGE_SIZE = (12, 8)\n\nwith detection_graph.as_default():\n    with tf.compat.v1.Session(graph=detection_graph) as sess:\n        while True:\n            ret, image_np = cap.read()\n            # Expand dimensions since the model expects images to have shape: [1, None, None, 3]\n            image_np_expanded = np.expand_dims(image_np, axis=0)\n            image_tensor = detection_graph.get_tensor_by_name('image_tensor:0')\n            # Each box represents a part of the image where a particular object was detected.\n            boxes = detection_graph.get_tensor_by_name('detection_boxes:0')\n            # Each score represent how level of confidence for each of the objects.\n            # Score is shown on the result image, together with the class label.\n            scores = detection_graph.get_tensor_by_name('detection_scores:0')\n            classes = detection_graph.get_tensor_by_name('detection_classes:0')\n            num_detections = detection_graph.get_tensor_by_name('num_detections:0')\n            # Actual detection.\n            (boxes, scores, classes, num_detections) = sess.run(\n                [boxes, scores, classes, num_detections],\n                feed_dict={image_tensor: image_np_expanded})\n            # Visualization of the results of a detection.\n            vis_util.visualize_boxes_and_labels_on_image_array(\n                image_np,\n                np.squeeze(boxes),\n                np.squeeze(classes).astype(np.int32),\n                np.squeeze(scores),\n                category_index,\n                use_normalized_coordinates=True,\n                line_thickness=8)\n\n            cv2.imshow('object detection', cv2.resize(image_np, (800, 600)))\n            if cv2.waitKey(25) & 0xFF == ord('q'):\n                cv2.destroyAllWindows()\n                break\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/webcam_test_mac.py b/webcam_test_mac.py
+--- a/webcam_test_mac.py	(revision 3ba62f82570e75d0f3df9d1a1f1fc5ad7d5e9828)
++++ b/webcam_test_mac.py	(date 1634360949769)
+@@ -1,24 +1,22 @@
++'''
++Title:
++Author:
++Date:
++Code version:
++Availability: https://pythonprogramming.net/video-tensorflow-object-detection-api-tutorial/
++'''
+ import numpy as np
+ import os
+ import six.moves.urllib as urllib
+-import sys
+ import tarfile
+ import tensorflow as tf
+-import zipfile
+-
+-from collections import defaultdict
+-from io import StringIO
+-from matplotlib import pyplot as plt
+-from PIL import Image
+-
+ import cv2
+-
+ cap = cv2.VideoCapture(0)
+ 
+ from Tensorflow.models.research.object_detection.utils import label_map_util
+ from Tensorflow.models.research.object_detection.utils import visualization_utils as vis_util
+ 
+-MODEL_NAME = 'ssd_mobilenet_v1_coco_11_06_2017'
++MODEL_NAME = 'ssd_mobilenet_v1_coco_2018_01_28'
+ MODEL_FILE = MODEL_NAME + '.tar.gz'
+ DOWNLOAD_BASE = 'http://download.tensorflow.org/models/object_detection/'
+ 
+@@ -51,24 +49,19 @@
+ category_index = label_map_util.create_category_index(categories)
+ 
+ 
+-def load_image_into_numpy_array(image):
+-    (im_width, im_height) = image.size
+-    return np.array(image.getdata()).reshape(
+-        (im_height, im_width, 3)).astype(np.uint8)
++def person_counter(score, classes):
++    # TODO: Have it only count humans.
++    final_score = np.squeeze(score)
++    count = 0
++    for i in range(100):
++        if classes == 'person':
++            if scores is None or final_score[i] > 0.5:
++                count = count + 1
++    return count
+ 
+ 
+ # # Detection
+ 
+-# For the sake of simplicity we will use only 2 images:
+-# image1.jpg
+-# image2.jpg
+-# If you want to test the code with your images, just add path to the images to the TEST_IMAGE_PATHS.
+-PATH_TO_TEST_IMAGES_DIR = 'test_images'
+-TEST_IMAGE_PATHS = [os.path.join(PATH_TO_TEST_IMAGES_DIR, 'image{}.jpg'.format(i)) for i in range(1, 3)]
+-
+-# Size, in inches, of the output images.
+-IMAGE_SIZE = (12, 8)
+-
+ with detection_graph.as_default():
+     with tf.compat.v1.Session(graph=detection_graph) as sess:
+         while True:
+@@ -83,6 +76,7 @@
+             scores = detection_graph.get_tensor_by_name('detection_scores:0')
+             classes = detection_graph.get_tensor_by_name('detection_classes:0')
+             num_detections = detection_graph.get_tensor_by_name('num_detections:0')
++
+             # Actual detection.
+             (boxes, scores, classes, num_detections) = sess.run(
+                 [boxes, scores, classes, num_detections],
+@@ -95,9 +89,16 @@
+                 np.squeeze(scores),
+                 category_index,
+                 use_normalized_coordinates=True,
+-                line_thickness=8)
+-
+-            cv2.imshow('object detection', cv2.resize(image_np, (800, 600)))
++                line_thickness=6)
++            objects = []
++            for index, value in enumerate(classes[0]):
++                object_dict = {}
++                if scores[0, index] > .5:
++                    object_dict[(category_index.get(value)).get('name').encode('utf8')] = \
++                        scores[0, index]
++                    objects.append(object_dict)
++            print(person_counter(score=scores, classes=objects))
++            cv2.imshow('object detection', cv2.resize(image_np, (900, 800)))
+             if cv2.waitKey(25) & 0xFF == ord('q'):
+                 cv2.destroyAllWindows()
+                 break
+Index: .idea/workspace.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<project version=\"4\">\n  <component name=\"ChangeListManager\">\n    <list default=\"true\" id=\"6db736db-cd44-435c-853b-0fe9ddcde649\" name=\"Default Changelist\" comment=\"\">\n      <change beforePath=\"$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Update_at_9_21_21,_11_37_PM_[Default_Changelist]/shelved.patch\" beforeDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Update_at_9_21_21,_8_16_AM_[Default_Changelist]/shelved.patch\" beforeDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Update_at_9_21_21__11_37_PM__Default_Changelist_.xml\" beforeDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Update_at_9_21_21__8_16_AM__Default_Changelist_.xml\" beforeDir=\"false\" />\n      <change beforePath=\"$PROJECT_DIR$/.idea/workspace.xml\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/.idea/workspace.xml\" afterDir=\"false\" />\n    </list>\n    <ignored path=\"$PROJECT_DIR$/.idea/shelf/\" />\n    <option name=\"EXCLUDED_CONVERTED_TO_IGNORED\" value=\"true\" />\n    <option name=\"SHOW_DIALOG\" value=\"false\" />\n    <option name=\"HIGHLIGHT_CONFLICTS\" value=\"true\" />\n    <option name=\"HIGHLIGHT_NON_ACTIVE_CHANGELIST\" value=\"false\" />\n    <option name=\"LAST_RESOLUTION\" value=\"IGNORE\" />\n  </component>\n  <component name=\"FileEditorManager\">\n    <leaf SIDE_TABS_SIZE_LIMIT_KEY=\"300\">\n      <file pinned=\"false\" current-in-tab=\"false\">\n        <entry file=\"file://$PROJECT_DIR$/humanTracking.py\">\n          <provider selected=\"true\" editor-type-id=\"text-editor\">\n            <state relative-caret-position=\"225\">\n              <caret line=\"15\" column=\"20\" selection-start-line=\"15\" selection-start-column=\"20\" selection-end-line=\"15\" selection-end-column=\"20\" />\n              <folding>\n                <element signature=\"e#0#23#0\" expanded=\"true\" />\n              </folding>\n            </state>\n          </provider>\n        </entry>\n      </file>\n      <file pinned=\"false\" current-in-tab=\"true\">\n        <entry file=\"file://$PROJECT_DIR$/camera_stream.py\">\n          <provider selected=\"true\" editor-type-id=\"text-editor\">\n            <state relative-caret-position=\"420\">\n              <caret line=\"28\" column=\"7\" lean-forward=\"true\" selection-start-line=\"28\" selection-start-column=\"7\" selection-end-line=\"28\" selection-end-column=\"7\" />\n              <folding>\n                <element signature=\"e#0#18#0\" expanded=\"true\" />\n              </folding>\n            </state>\n          </provider>\n        </entry>\n      </file>\n    </leaf>\n  </component>\n  <component name=\"FileTemplateManagerImpl\">\n    <option name=\"RECENT_TEMPLATES\">\n      <list>\n        <option value=\"Python Script\" />\n      </list>\n    </option>\n  </component>\n  <component name=\"FindInProjectRecents\">\n    <findStrings>\n      <find>setuptools</find>\n    </findStrings>\n  </component>\n  <component name=\"Git.Settings\">\n    <option name=\"UPDATE_TYPE\" value=\"REBASE\" />\n    <option name=\"RECENT_GIT_ROOT_PATH\" value=\"$PROJECT_DIR$\" />\n  </component>\n  <component name=\"IdeDocumentHistory\">\n    <option name=\"CHANGED_PATHS\">\n      <list>\n        <option value=\"$PROJECT_DIR$/humanTracking.py\" />\n        <option value=\"$PROJECT_DIR$/gpio_tester.py\" />\n        <option value=\"$PROJECT_DIR$/camera_stream.py\" />\n      </list>\n    </option>\n  </component>\n  <component name=\"ProjectFrameBounds\">\n    <option name=\"x\" value=\"440\" />\n    <option name=\"width\" value=\"1480\" />\n    <option name=\"height\" value=\"1080\" />\n  </component>\n  <component name=\"ProjectLevelVcsManager\" settingsEditedManually=\"true\" />\n  <component name=\"ProjectView\">\n    <navigator proportions=\"\" version=\"1\">\n      <foldersAlwaysOnTop value=\"true\" />\n    </navigator>\n    <panes>\n      <pane id=\"Scope\" />\n      <pane id=\"ProjectPane\">\n        <subPane>\n          <expand>\n            <path>\n              <item name=\"SecurityCamera\" type=\"b2602c69:ProjectViewProjectNode\" />\n              <item name=\"SecurityCamera\" type=\"462c0819:PsiDirectoryNode\" />\n            </path>\n            <path>\n              <item name=\"SecurityCamera\" type=\"b2602c69:ProjectViewProjectNode\" />\n              <item name=\"SecurityCamera\" type=\"462c0819:PsiDirectoryNode\" />\n              <item name=\"Tensorflow\" type=\"462c0819:PsiDirectoryNode\" />\n            </path>\n          </expand>\n          <select />\n        </subPane>\n      </pane>\n    </panes>\n  </component>\n  <component name=\"PropertiesComponent\">\n    <property name=\"ASKED_SHARE_PROJECT_CONFIGURATION_FILES\" value=\"true\" />\n    <property name=\"SHARE_PROJECT_CONFIGURATION_FILES\" value=\"true\" />\n    <property name=\"last_opened_file_path\" value=\"/usr/share/opencv4\" />\n    <property name=\"settings.editor.selected.configurable\" value=\"com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable\" />\n  </component>\n  <component name=\"RecentsManager\">\n    <key name=\"MoveFile.RECENT_KEYS\">\n      <recent name=\"$PROJECT_DIR$/Tensorflow/protoc\" />\n    </key>\n  </component>\n  <component name=\"RunDashboard\">\n    <option name=\"ruleStates\">\n      <list>\n        <RuleState>\n          <option name=\"name\" value=\"ConfigurationTypeDashboardGroupingRule\" />\n        </RuleState>\n        <RuleState>\n          <option name=\"name\" value=\"StatusDashboardGroupingRule\" />\n        </RuleState>\n      </list>\n    </option>\n  </component>\n  <component name=\"RunManager\" selected=\"Python.camera_stream\">\n    <configuration name=\"all\" type=\"MAKEFILE_TARGET_RUN_CONFIGURATION\" factoryName=\"Makefile\" temporary=\"true\">\n      <makefile filename=\"$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/Makefile\" target=\"all\" workingDirectory=\"\" arguments=\"\">\n        <envs />\n      </makefile>\n      <method v=\"2\" />\n    </configuration>\n    <configuration name=\"camera_stream\" type=\"PythonConfigurationType\" factoryName=\"Python\" temporary=\"true\">\n      <module name=\"SecurityCamera\" />\n      <option name=\"INTERPRETER_OPTIONS\" value=\"\" />\n      <option name=\"PARENT_ENVS\" value=\"true\" />\n      <envs>\n        <env name=\"PYTHONUNBUFFERED\" value=\"1\" />\n      </envs>\n      <option name=\"SDK_HOME\" value=\"\" />\n      <option name=\"WORKING_DIRECTORY\" value=\"$PROJECT_DIR$\" />\n      <option name=\"IS_MODULE_SDK\" value=\"true\" />\n      <option name=\"ADD_CONTENT_ROOTS\" value=\"true\" />\n      <option name=\"ADD_SOURCE_ROOTS\" value=\"true\" />\n      <option name=\"SCRIPT_NAME\" value=\"$PROJECT_DIR$/camera_stream.py\" />\n      <option name=\"PARAMETERS\" value=\"\" />\n      <option name=\"SHOW_COMMAND_LINE\" value=\"false\" />\n      <option name=\"EMULATE_TERMINAL\" value=\"false\" />\n      <option name=\"MODULE_MODE\" value=\"false\" />\n      <option name=\"REDIRECT_INPUT\" value=\"false\" />\n      <option name=\"INPUT_FILE\" value=\"\" />\n      <method v=\"2\" />\n    </configuration>\n    <configuration name=\"gpio_tester\" type=\"PythonConfigurationType\" factoryName=\"Python\" temporary=\"true\">\n      <module name=\"SecurityCamera\" />\n      <option name=\"INTERPRETER_OPTIONS\" value=\"\" />\n      <option name=\"PARENT_ENVS\" value=\"true\" />\n      <envs>\n        <env name=\"PYTHONUNBUFFERED\" value=\"1\" />\n      </envs>\n      <option name=\"SDK_HOME\" value=\"\" />\n      <option name=\"WORKING_DIRECTORY\" value=\"$PROJECT_DIR$\" />\n      <option name=\"IS_MODULE_SDK\" value=\"true\" />\n      <option name=\"ADD_CONTENT_ROOTS\" value=\"true\" />\n      <option name=\"ADD_SOURCE_ROOTS\" value=\"true\" />\n      <option name=\"SCRIPT_NAME\" value=\"$PROJECT_DIR$/gpio_tester.py\" />\n      <option name=\"PARAMETERS\" value=\"\" />\n      <option name=\"SHOW_COMMAND_LINE\" value=\"false\" />\n      <option name=\"EMULATE_TERMINAL\" value=\"false\" />\n      <option name=\"MODULE_MODE\" value=\"false\" />\n      <option name=\"REDIRECT_INPUT\" value=\"false\" />\n      <option name=\"INPUT_FILE\" value=\"\" />\n      <method v=\"2\" />\n    </configuration>\n    <configuration name=\"humanTracking\" type=\"PythonConfigurationType\" factoryName=\"Python\">\n      <module name=\"SecurityCamera\" />\n      <option name=\"INTERPRETER_OPTIONS\" value=\"\" />\n      <option name=\"PARENT_ENVS\" value=\"true\" />\n      <envs>\n        <env name=\"PYTHONUNBUFFERED\" value=\"1\" />\n      </envs>\n      <option name=\"SDK_HOME\" value=\"\" />\n      <option name=\"WORKING_DIRECTORY\" value=\"$PROJECT_DIR$\" />\n      <option name=\"IS_MODULE_SDK\" value=\"true\" />\n      <option name=\"ADD_CONTENT_ROOTS\" value=\"true\" />\n      <option name=\"ADD_SOURCE_ROOTS\" value=\"true\" />\n      <option name=\"SCRIPT_NAME\" value=\"$PROJECT_DIR$/humanTracking.py\" />\n      <option name=\"PARAMETERS\" value=\"\" />\n      <option name=\"SHOW_COMMAND_LINE\" value=\"false\" />\n      <option name=\"EMULATE_TERMINAL\" value=\"false\" />\n      <option name=\"MODULE_MODE\" value=\"false\" />\n      <option name=\"REDIRECT_INPUT\" value=\"false\" />\n      <option name=\"INPUT_FILE\" value=\"\" />\n      <method v=\"2\" />\n    </configuration>\n    <recent_temporary>\n      <list>\n        <item itemvalue=\"Python.camera_stream\" />\n        <item itemvalue=\"Python.gpio_tester\" />\n        <item itemvalue=\"Makefile.all\" />\n      </list>\n    </recent_temporary>\n  </component>\n  <component name=\"SvnConfiguration\">\n    <configuration />\n  </component>\n  <component name=\"TaskManager\">\n    <task active=\"true\" id=\"Default\" summary=\"Default task\">\n      <changelist id=\"6db736db-cd44-435c-853b-0fe9ddcde649\" name=\"Default Changelist\" comment=\"\" />\n      <created>1630379749309</created>\n      <option name=\"number\" value=\"Default\" />\n      <option name=\"presentableId\" value=\"Default\" />\n      <updated>1630379749309</updated>\n    </task>\n    <task id=\"LOCAL-00001\" summary=\"Added some imports that are going to be used.\">\n      <created>1630388349862</created>\n      <option name=\"number\" value=\"00001\" />\n      <option name=\"presentableId\" value=\"LOCAL-00001\" />\n      <option name=\"project\" value=\"LOCAL\" />\n      <updated>1630388349863</updated>\n    </task>\n    <option name=\"localTasksCounter\" value=\"2\" />\n    <servers />\n  </component>\n  <component name=\"TodoView\">\n    <todo-panel id=\"selected-file\">\n      <is-autoscroll-to-source value=\"true\" />\n    </todo-panel>\n    <todo-panel id=\"all\">\n      <are-packages-shown value=\"true\" />\n      <is-autoscroll-to-source value=\"true\" />\n    </todo-panel>\n  </component>\n  <component name=\"ToolWindowManager\">\n    <frame x=\"440\" y=\"0\" width=\"1480\" height=\"1080\" extended-state=\"0\" />\n    <layout>\n      <window_info content_ui=\"combo\" id=\"Project\" order=\"0\" sideWeight=\"0.49915683\" visible=\"true\" weight=\"0.15250696\" />\n      <window_info id=\"Structure\" order=\"1\" sideWeight=\"0.50084317\" side_tool=\"true\" weight=\"0.24941361\" />\n      <window_info id=\"Favorites\" order=\"2\" side_tool=\"true\" />\n      <window_info anchor=\"bottom\" id=\"Message\" order=\"0\" />\n      <window_info anchor=\"bottom\" id=\"Find\" order=\"1\" />\n      <window_info anchor=\"bottom\" id=\"Run\" order=\"2\" sideWeight=\"0.49840933\" weight=\"0.32883817\" />\n      <window_info anchor=\"bottom\" id=\"Debug\" order=\"3\" weight=\"0.4\" />\n      <window_info anchor=\"bottom\" id=\"Cvs\" order=\"4\" weight=\"0.25\" />\n      <window_info anchor=\"bottom\" id=\"Inspection\" order=\"5\" weight=\"0.4\" />\n      <window_info anchor=\"bottom\" id=\"TODO\" order=\"6\" weight=\"0.32918552\" />\n      <window_info anchor=\"bottom\" id=\"Version Control\" order=\"7\" weight=\"0.32883817\" />\n      <window_info anchor=\"bottom\" id=\"Terminal\" order=\"8\" weight=\"0.30186722\" />\n      <window_info anchor=\"bottom\" id=\"Event Log\" order=\"9\" sideWeight=\"0.50159067\" side_tool=\"true\" weight=\"0.32883817\" />\n      <window_info anchor=\"bottom\" id=\"Python Console\" order=\"10\" sideWeight=\"0.4994698\" weight=\"0.32883817\" />\n      <window_info anchor=\"right\" id=\"Commander\" internal_type=\"SLIDING\" order=\"0\" type=\"SLIDING\" weight=\"0.4\" />\n      <window_info anchor=\"right\" id=\"Ant Build\" order=\"1\" weight=\"0.25\" />\n      <window_info anchor=\"right\" content_ui=\"combo\" id=\"Hierarchy\" order=\"2\" weight=\"0.25\" />\n      <window_info anchor=\"right\" id=\"make\" order=\"3\" weight=\"0.32979852\" />\n    </layout>\n  </component>\n  <component name=\"Vcs.Log.Tabs.Properties\">\n    <option name=\"TAB_STATES\">\n      <map>\n        <entry key=\"MAIN\">\n          <value>\n            <State>\n              <option name=\"RECENTLY_FILTERED_USER_GROUPS\">\n                <collection />\n              </option>\n              <option name=\"RECENTLY_FILTERED_BRANCH_GROUPS\">\n                <collection />\n              </option>\n              <option name=\"COLUMN_ORDER\">\n                <list>\n                  <option value=\"0\" />\n                  <option value=\"1\" />\n                  <option value=\"2\" />\n                  <option value=\"3\" />\n                </list>\n              </option>\n            </State>\n          </value>\n        </entry>\n      </map>\n    </option>\n    <option name=\"RECENT_FILTERS\">\n      <map>\n        <entry key=\"Branch\">\n          <value>\n            <list />\n          </value>\n        </entry>\n        <entry key=\"User\">\n          <value>\n            <list />\n          </value>\n        </entry>\n      </map>\n    </option>\n  </component>\n  <component name=\"VcsManagerConfiguration\">\n    <MESSAGE value=\"Added some imports that are going to be used.\" />\n    <option name=\"LAST_COMMIT_MESSAGE\" value=\"Added some imports that are going to be used.\" />\n  </component>\n  <component name=\"editorHistoryManager\">\n    <entry file=\"file://$PROJECT_DIR$/Tensorflow/protoc/readme.txt\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\" />\n    </entry>\n    <entry file=\"file://$USER_HOME$/.local/lib/python3.6/site-packages/setuptools/__init__.py\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\">\n        <state>\n          <folding>\n            <element signature=\"e#72#103#0\" expanded=\"true\" />\n          </folding>\n        </state>\n      </provider>\n    </entry>\n    <entry file=\"file://$PROJECT_DIR$/Tensorflow/cocoapi/README.txt\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\">\n        <state relative-caret-position=\"225\">\n          <caret line=\"15\" selection-start-line=\"15\" selection-end-line=\"15\" />\n        </state>\n      </provider>\n    </entry>\n    <entry file=\"file://$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/Makefile\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\">\n        <state relative-caret-position=\"120\">\n          <caret line=\"8\" column=\"16\" selection-start-line=\"8\" selection-start-column=\"16\" selection-end-line=\"8\" selection-end-column=\"16\" />\n        </state>\n      </provider>\n    </entry>\n    <entry file=\"file://$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/setup.py\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\">\n        <state relative-caret-position=\"405\">\n          <caret line=\"27\" selection-start-line=\"27\" selection-end-line=\"27\" />\n          <folding>\n            <element signature=\"e#0#39#0\" expanded=\"true\" />\n          </folding>\n        </state>\n      </provider>\n    </entry>\n    <entry file=\"file://$PROJECT_DIR$/Tensorflow/models/research/setup.py\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\" />\n    </entry>\n    <entry file=\"file://$PROJECT_DIR$/gpio_tester.py\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\" />\n    </entry>\n    <entry file=\"file://$PROJECT_DIR$/humanTracking.py\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\">\n        <state relative-caret-position=\"225\">\n          <caret line=\"15\" column=\"20\" selection-start-line=\"15\" selection-start-column=\"20\" selection-end-line=\"15\" selection-end-column=\"20\" />\n          <folding>\n            <element signature=\"e#0#23#0\" expanded=\"true\" />\n          </folding>\n        </state>\n      </provider>\n    </entry>\n    <entry file=\"file://$PROJECT_DIR$/camera_stream.py\">\n      <provider selected=\"true\" editor-type-id=\"text-editor\">\n        <state relative-caret-position=\"420\">\n          <caret line=\"28\" column=\"7\" lean-forward=\"true\" selection-start-line=\"28\" selection-start-column=\"7\" selection-end-line=\"28\" selection-end-column=\"7\" />\n          <folding>\n            <element signature=\"e#0#18#0\" expanded=\"true\" />\n          </folding>\n        </state>\n      </provider>\n    </entry>\n  </component>\n</project>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/workspace.xml b/.idea/workspace.xml
+--- a/.idea/workspace.xml	(revision 3ba62f82570e75d0f3df9d1a1f1fc5ad7d5e9828)
++++ b/.idea/workspace.xml	(date 1634361249375)
+@@ -1,51 +1,30 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <project version="4">
+   <component name="ChangeListManager">
+-    <list default="true" id="6db736db-cd44-435c-853b-0fe9ddcde649" name="Default Changelist" comment="">
+-      <change beforePath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Update_at_9_21_21,_11_37_PM_[Default_Changelist]/shelved.patch" beforeDir="false" />
+-      <change beforePath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Update_at_9_21_21,_8_16_AM_[Default_Changelist]/shelved.patch" beforeDir="false" />
+-      <change beforePath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Update_at_9_21_21__11_37_PM__Default_Changelist_.xml" beforeDir="false" />
+-      <change beforePath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Update_at_9_21_21__8_16_AM__Default_Changelist_.xml" beforeDir="false" />
++    <list default="true" id="6db736db-cd44-435c-853b-0fe9ddcde649" name="Default Changelist" comment="Added some imports that are going to be used.">
++      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/.idea/SecurityCamera.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/SecurityCamera.iml" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/Tensorflow/cocoapi" beforeDir="false" />
++      <change beforePath="$PROJECT_DIR$/Tensorflow/models" beforeDir="false" afterPath="$PROJECT_DIR$/Tensorflow/models" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/Tensorflow/models/research/object_detection/utils/label_map_util.py" beforeDir="false" afterPath="$PROJECT_DIR$/Tensorflow/models/research/object_detection/utils/label_map_util.py" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/Tensorflow/models/research/object_detection/utils/shape_utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/Tensorflow/models/research/object_detection/utils/shape_utils.py" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/Tensorflow/models/research/object_detection/utils/visualization_utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/Tensorflow/models/research/object_detection/utils/visualization_utils.py" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/camera_stream.py" beforeDir="false" afterPath="$PROJECT_DIR$/camera_stream.py" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/humanTracking.py" beforeDir="false" afterPath="$PROJECT_DIR$/humanTracking.py" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/webcam_test_mac.py" beforeDir="false" afterPath="$PROJECT_DIR$/webcam_test_mac.py" afterDir="false" />
+     </list>
+-    <ignored path="$PROJECT_DIR$/.idea/shelf/" />
+-    <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
+     <option name="SHOW_DIALOG" value="false" />
+     <option name="HIGHLIGHT_CONFLICTS" value="true" />
+     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+     <option name="LAST_RESOLUTION" value="IGNORE" />
+-  </component>
+-  <component name="FileEditorManager">
+-    <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
+-      <file pinned="false" current-in-tab="false">
+-        <entry file="file://$PROJECT_DIR$/humanTracking.py">
+-          <provider selected="true" editor-type-id="text-editor">
+-            <state relative-caret-position="225">
+-              <caret line="15" column="20" selection-start-line="15" selection-start-column="20" selection-end-line="15" selection-end-column="20" />
+-              <folding>
+-                <element signature="e#0#23#0" expanded="true" />
+-              </folding>
+-            </state>
+-          </provider>
+-        </entry>
+-      </file>
+-      <file pinned="false" current-in-tab="true">
+-        <entry file="file://$PROJECT_DIR$/camera_stream.py">
+-          <provider selected="true" editor-type-id="text-editor">
+-            <state relative-caret-position="420">
+-              <caret line="28" column="7" lean-forward="true" selection-start-line="28" selection-start-column="7" selection-end-line="28" selection-end-column="7" />
+-              <folding>
+-                <element signature="e#0#18#0" expanded="true" />
+-              </folding>
+-            </state>
+-          </provider>
+-        </entry>
+-      </file>
+-    </leaf>
+   </component>
+   <component name="FileTemplateManagerImpl">
+     <option name="RECENT_TEMPLATES">
+       <list>
++        <option value="Jupyter Notebook" />
+         <option value="Python Script" />
+       </list>
+     </option>
+@@ -56,30 +35,32 @@
+     </findStrings>
+   </component>
+   <component name="Git.Settings">
+-    <option name="UPDATE_TYPE" value="REBASE" />
+     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
++    <option name="ROOT_SYNC" value="DONT_SYNC" />
++  </component>
++  <component name="HighlightingSettingsPerFile">
++    <setting file="file://$PROJECT_DIR$/.gitignore" root0="FORCE_HIGHLIGHTING" />
++    <setting file="file://$PROJECT_DIR$/webcam_test_mac.py" root0="FORCE_HIGHLIGHTING" />
+   </component>
+   <component name="IdeDocumentHistory">
+     <option name="CHANGED_PATHS">
+       <list>
+         <option value="$PROJECT_DIR$/humanTracking.py" />
+-        <option value="$PROJECT_DIR$/gpio_tester.py" />
+-        <option value="$PROJECT_DIR$/camera_stream.py" />
+       </list>
+     </option>
+   </component>
+   <component name="ProjectFrameBounds">
+-    <option name="x" value="440" />
+-    <option name="width" value="1480" />
++    <option name="x" value="933" />
++    <option name="width" value="987" />
+     <option name="height" value="1080" />
+   </component>
++  <component name="ProjectId" id="1yQxcYI0ell06ZJ6uhz19EGN6fz" />
+   <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
+   <component name="ProjectView">
+     <navigator proportions="" version="1">
+       <foldersAlwaysOnTop value="true" />
+     </navigator>
+     <panes>
+-      <pane id="Scope" />
+       <pane id="ProjectPane">
+         <subPane>
+           <expand>
+@@ -92,43 +73,39 @@
+               <item name="SecurityCamera" type="462c0819:PsiDirectoryNode" />
+               <item name="Tensorflow" type="462c0819:PsiDirectoryNode" />
+             </path>
++            <path>
++              <item name="SecurityCamera" type="b2602c69:ProjectViewProjectNode" />
++              <item name="SecurityCamera" type="462c0819:PsiDirectoryNode" />
++              <item name="Tensorflow" type="462c0819:PsiDirectoryNode" />
++              <item name="cocoapi" type="462c0819:PsiDirectoryNode" />
++            </path>
+           </expand>
+           <select />
+         </subPane>
+       </pane>
++      <pane id="Scope" />
+     </panes>
+   </component>
++  <component name="ProjectViewState">
++    <option name="hideEmptyMiddlePackages" value="true" />
++    <option name="showLibraryContents" value="true" />
++  </component>
+   <component name="PropertiesComponent">
+     <property name="ASKED_SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
++    <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
++    <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
+     <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
+-    <property name="last_opened_file_path" value="/usr/share/opencv4" />
+-    <property name="settings.editor.selected.configurable" value="com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable" />
++    <property name="WebServerToolWindowFactoryState" value="false" />
++    <property name="last_opened_file_path" value="$USER_HOME$/.conda/envs/tf-gpu/python.exe" />
++    <property name="settings.editor.selected.configurable" value="org.jetbrains.plugins.notebooks.jupyter.connections.configuration.JupyterServerConfigurable" />
+   </component>
+   <component name="RecentsManager">
+     <key name="MoveFile.RECENT_KEYS">
+       <recent name="$PROJECT_DIR$/Tensorflow/protoc" />
+     </key>
+   </component>
+-  <component name="RunDashboard">
+-    <option name="ruleStates">
+-      <list>
+-        <RuleState>
+-          <option name="name" value="ConfigurationTypeDashboardGroupingRule" />
+-        </RuleState>
+-        <RuleState>
+-          <option name="name" value="StatusDashboardGroupingRule" />
+-        </RuleState>
+-      </list>
+-    </option>
+-  </component>
+-  <component name="RunManager" selected="Python.camera_stream">
+-    <configuration name="all" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile" temporary="true">
+-      <makefile filename="$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/Makefile" target="all" workingDirectory="" arguments="">
+-        <envs />
+-      </makefile>
+-      <method v="2" />
+-    </configuration>
+-    <configuration name="camera_stream" type="PythonConfigurationType" factoryName="Python" temporary="true">
++  <component name="RunManager">
++    <configuration default="true" type="PythonConfigurationType" factoryName="Python">
+       <module name="SecurityCamera" />
+       <option name="INTERPRETER_OPTIONS" value="" />
+       <option name="PARENT_ENVS" value="true" />
+@@ -136,34 +113,14 @@
+         <env name="PYTHONUNBUFFERED" value="1" />
+       </envs>
+       <option name="SDK_HOME" value="" />
+-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+-      <option name="IS_MODULE_SDK" value="true" />
+-      <option name="ADD_CONTENT_ROOTS" value="true" />
+-      <option name="ADD_SOURCE_ROOTS" value="true" />
+-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/camera_stream.py" />
+-      <option name="PARAMETERS" value="" />
+-      <option name="SHOW_COMMAND_LINE" value="false" />
+-      <option name="EMULATE_TERMINAL" value="false" />
+-      <option name="MODULE_MODE" value="false" />
+-      <option name="REDIRECT_INPUT" value="false" />
+-      <option name="INPUT_FILE" value="" />
+-      <method v="2" />
+-    </configuration>
+-    <configuration name="gpio_tester" type="PythonConfigurationType" factoryName="Python" temporary="true">
+-      <module name="SecurityCamera" />
+-      <option name="INTERPRETER_OPTIONS" value="" />
+-      <option name="PARENT_ENVS" value="true" />
+-      <envs>
+-        <env name="PYTHONUNBUFFERED" value="1" />
+-      </envs>
+-      <option name="SDK_HOME" value="" />
+-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+-      <option name="IS_MODULE_SDK" value="true" />
++      <option name="WORKING_DIRECTORY" value="" />
++      <option name="IS_MODULE_SDK" value="false" />
+       <option name="ADD_CONTENT_ROOTS" value="true" />
+       <option name="ADD_SOURCE_ROOTS" value="true" />
+-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/gpio_tester.py" />
++      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
++      <option name="SCRIPT_NAME" value="" />
+       <option name="PARAMETERS" value="" />
+-      <option name="SHOW_COMMAND_LINE" value="false" />
++      <option name="SHOW_COMMAND_LINE" value="true" />
+       <option name="EMULATE_TERMINAL" value="false" />
+       <option name="MODULE_MODE" value="false" />
+       <option name="REDIRECT_INPUT" value="false" />
+@@ -174,31 +131,23 @@
+       <module name="SecurityCamera" />
+       <option name="INTERPRETER_OPTIONS" value="" />
+       <option name="PARENT_ENVS" value="true" />
+-      <envs>
+-        <env name="PYTHONUNBUFFERED" value="1" />
+-      </envs>
+       <option name="SDK_HOME" value="" />
+       <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+       <option name="IS_MODULE_SDK" value="true" />
+       <option name="ADD_CONTENT_ROOTS" value="true" />
+       <option name="ADD_SOURCE_ROOTS" value="true" />
++      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/humanTracking.py" />
+       <option name="PARAMETERS" value="" />
+-      <option name="SHOW_COMMAND_LINE" value="false" />
++      <option name="SHOW_COMMAND_LINE" value="true" />
+       <option name="EMULATE_TERMINAL" value="false" />
+       <option name="MODULE_MODE" value="false" />
+       <option name="REDIRECT_INPUT" value="false" />
+       <option name="INPUT_FILE" value="" />
+       <method v="2" />
+     </configuration>
+-    <recent_temporary>
+-      <list>
+-        <item itemvalue="Python.camera_stream" />
+-        <item itemvalue="Python.gpio_tester" />
+-        <item itemvalue="Makefile.all" />
+-      </list>
+-    </recent_temporary>
+   </component>
++  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+   <component name="SvnConfiguration">
+     <configuration />
+   </component>
+@@ -209,6 +158,9 @@
+       <option name="number" value="Default" />
+       <option name="presentableId" value="Default" />
+       <updated>1630379749309</updated>
++      <workItem from="1632197696336" duration="9340000" />
++      <workItem from="1632280103489" duration="1106000" />
++      <workItem from="1632281227569" duration="6167000" />
+     </task>
+     <task id="LOCAL-00001" summary="Added some imports that are going to be used.">
+       <created>1630388349862</created>
+@@ -217,7 +169,14 @@
+       <option name="project" value="LOCAL" />
+       <updated>1630388349863</updated>
+     </task>
+-    <option name="localTasksCounter" value="2" />
++    <task id="LOCAL-00002" summary="Added some imports that are going to be used.">
++      <created>1632795653818</created>
++      <option name="number" value="00002" />
++      <option name="presentableId" value="LOCAL-00002" />
++      <option name="project" value="LOCAL" />
++      <updated>1632795653818</updated>
++    </task>
++    <option name="localTasksCounter" value="3" />
+     <servers />
+   </component>
+   <component name="TodoView">
+@@ -230,47 +189,48 @@
+     </todo-panel>
+   </component>
+   <component name="ToolWindowManager">
+-    <frame x="440" y="0" width="1480" height="1080" extended-state="0" />
++    <frame x="933" y="0" width="987" height="1080" extended-state="0" />
++    <editor active="true" />
+     <layout>
+-      <window_info content_ui="combo" id="Project" order="0" sideWeight="0.49915683" visible="true" weight="0.15250696" />
++      <window_info active="true" content_ui="combo" id="Project" order="0" sideWeight="0.49915683" visible="true" weight="0.24178155" />
+       <window_info id="Structure" order="1" sideWeight="0.50084317" side_tool="true" weight="0.24941361" />
+       <window_info id="Favorites" order="2" side_tool="true" />
+       <window_info anchor="bottom" id="Message" order="0" />
+       <window_info anchor="bottom" id="Find" order="1" />
+-      <window_info anchor="bottom" id="Run" order="2" sideWeight="0.49840933" weight="0.32883817" />
++      <window_info anchor="bottom" id="Run" order="2" visible="true" weight="0.32883817" />
+       <window_info anchor="bottom" id="Debug" order="3" weight="0.4" />
+       <window_info anchor="bottom" id="Cvs" order="4" weight="0.25" />
+       <window_info anchor="bottom" id="Inspection" order="5" weight="0.4" />
+       <window_info anchor="bottom" id="TODO" order="6" weight="0.32918552" />
+-      <window_info anchor="bottom" id="Version Control" order="7" weight="0.32883817" />
++      <window_info anchor="bottom" id="Version Control" order="7" weight="0.32918552" />
+       <window_info anchor="bottom" id="Terminal" order="8" weight="0.30186722" />
+-      <window_info anchor="bottom" id="Event Log" order="9" sideWeight="0.50159067" side_tool="true" weight="0.32883817" />
+-      <window_info anchor="bottom" id="Python Console" order="10" sideWeight="0.4994698" weight="0.32883817" />
++      <window_info anchor="bottom" id="Event Log" order="9" side_tool="true" />
++      <window_info anchor="bottom" id="Python Console" order="10" weight="0.32918552" />
++      <window_info anchor="right" id="make" />
+       <window_info anchor="right" id="Commander" internal_type="SLIDING" order="0" type="SLIDING" weight="0.4" />
+       <window_info anchor="right" id="Ant Build" order="1" weight="0.25" />
+       <window_info anchor="right" content_ui="combo" id="Hierarchy" order="2" weight="0.25" />
+-      <window_info anchor="right" id="make" order="3" weight="0.32979852" />
+     </layout>
+   </component>
++  <component name="TypeScriptGeneratedFilesManager">
++    <option name="version" value="3" />
++  </component>
+   <component name="Vcs.Log.Tabs.Properties">
+     <option name="TAB_STATES">
+       <map>
+         <entry key="MAIN">
+           <value>
+             <State>
+-              <option name="RECENTLY_FILTERED_USER_GROUPS">
+-                <collection />
+-              </option>
+-              <option name="RECENTLY_FILTERED_BRANCH_GROUPS">
+-                <collection />
+-              </option>
+-              <option name="COLUMN_ORDER">
+-                <list>
+-                  <option value="0" />
+-                  <option value="1" />
+-                  <option value="2" />
+-                  <option value="3" />
+-                </list>
++              <option name="FILTERS">
++                <map>
++                  <entry key="branch">
++                    <value>
++                      <list>
++                        <option value="main" />
++                      </list>
++                    </value>
++                  </entry>
++                </map>
+               </option>
+             </State>
+           </value>
+@@ -281,7 +241,13 @@
+       <map>
+         <entry key="Branch">
+           <value>
+-            <list />
++            <list>
++              <RecentGroup>
++                <option name="FILTER_VALUES">
++                  <option value="main" />
++                </option>
++              </RecentGroup>
++            </list>
+           </value>
+         </entry>
+         <entry key="User">
+@@ -291,15 +257,31 @@
+         </entry>
+       </map>
+     </option>
++    <option name="oldMeFiltersMigrated" value="true" />
+   </component>
+   <component name="VcsManagerConfiguration">
+     <MESSAGE value="Added some imports that are going to be used." />
+     <option name="LAST_COMMIT_MESSAGE" value="Added some imports that are going to be used." />
+   </component>
++  <component name="com.intellij.coverage.CoverageDataManagerImpl">
++    <SUITE FILE_PATH="coverage/SecurityCamera$gpio_tester.coverage" NAME="gpio_tester Coverage Results" MODIFIED="1633746178146" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
++    <SUITE FILE_PATH="coverage/SecurityCamera$humanTracking.coverage" NAME="humanTracking Coverage Results" MODIFIED="1634107248114" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
++    <SUITE FILE_PATH="coverage/SecurityCamera$camera_stream.coverage" NAME="camera_stream Coverage Results" MODIFIED="1634007596056" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
++  </component>
+   <component name="editorHistoryManager">
+     <entry file="file://$PROJECT_DIR$/Tensorflow/protoc/readme.txt">
+       <provider selected="true" editor-type-id="text-editor" />
+     </entry>
++    <entry file="file://$PROJECT_DIR$/humanTracking.py">
++      <provider selected="true" editor-type-id="text-editor">
++        <state relative-caret-position="75">
++          <caret line="10" column="14" selection-start-line="10" selection-start-column="14" selection-end-line="10" selection-end-column="14" />
++          <folding>
++            <element signature="e#0#23#0" expanded="true" />
++          </folding>
++        </state>
++      </provider>
++    </entry>
+     <entry file="file://$USER_HOME$/.local/lib/python3.6/site-packages/setuptools/__init__.py">
+       <provider selected="true" editor-type-id="text-editor">
+         <state>
+@@ -316,13 +298,6 @@
+         </state>
+       </provider>
+     </entry>
+-    <entry file="file://$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/Makefile">
+-      <provider selected="true" editor-type-id="text-editor">
+-        <state relative-caret-position="120">
+-          <caret line="8" column="16" selection-start-line="8" selection-start-column="16" selection-end-line="8" selection-end-column="16" />
+-        </state>
+-      </provider>
+-    </entry>
+     <entry file="file://$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/setup.py">
+       <provider selected="true" editor-type-id="text-editor">
+         <state relative-caret-position="405">
+@@ -333,29 +308,10 @@
+         </state>
+       </provider>
+     </entry>
+-    <entry file="file://$PROJECT_DIR$/Tensorflow/models/research/setup.py">
+-      <provider selected="true" editor-type-id="text-editor" />
+-    </entry>
+-    <entry file="file://$PROJECT_DIR$/gpio_tester.py">
+-      <provider selected="true" editor-type-id="text-editor" />
+-    </entry>
+-    <entry file="file://$PROJECT_DIR$/humanTracking.py">
+-      <provider selected="true" editor-type-id="text-editor">
+-        <state relative-caret-position="225">
+-          <caret line="15" column="20" selection-start-line="15" selection-start-column="20" selection-end-line="15" selection-end-column="20" />
+-          <folding>
+-            <element signature="e#0#23#0" expanded="true" />
+-          </folding>
+-        </state>
+-      </provider>
+-    </entry>
+-    <entry file="file://$PROJECT_DIR$/camera_stream.py">
++    <entry file="file://$PROJECT_DIR$/Tensorflow/cocoapi/PythonAPI/Makefile">
+       <provider selected="true" editor-type-id="text-editor">
+-        <state relative-caret-position="420">
+-          <caret line="28" column="7" lean-forward="true" selection-start-line="28" selection-start-column="7" selection-end-line="28" selection-end-column="7" />
+-          <folding>
+-            <element signature="e#0#18#0" expanded="true" />
+-          </folding>
++        <state relative-caret-position="120">
++          <caret line="8" column="16" lean-forward="true" selection-start-line="8" selection-start-column="16" selection-end-line="8" selection-end-column="16" />
+         </state>
+       </provider>
+     </entry>
+Index: .idea/SecurityCamera.iml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<module type=\"PYTHON_MODULE\" version=\"4\">\n  <component name=\"NewModuleRootManager\">\n    <content url=\"file://$MODULE_DIR$\">\n      <excludeFolder url=\"file://$MODULE_DIR$/venv\" />\n    </content>\n    <orderEntry type=\"jdk\" jdkName=\"Python 3.9 (tf-gpu)\" jdkType=\"Python SDK\" />\n    <orderEntry type=\"sourceFolder\" forTests=\"false\" />\n  </component>\n  <component name=\"PyDocumentationSettings\">\n    <option name=\"renderExternalDocumentation\" value=\"true\" />\n  </component>\n  <component name=\"TestRunnerService\">\n    <option name=\"PROJECT_TEST_RUNNER\" value=\"Unittests\" />\n  </component>\n</module>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/SecurityCamera.iml b/.idea/SecurityCamera.iml
+--- a/.idea/SecurityCamera.iml	(revision 3ba62f82570e75d0f3df9d1a1f1fc5ad7d5e9828)
++++ b/.idea/SecurityCamera.iml	(date 1634236664893)
+@@ -4,7 +4,7 @@
+     <content url="file://$MODULE_DIR$">
+       <excludeFolder url="file://$MODULE_DIR$/venv" />
+     </content>
+-    <orderEntry type="jdk" jdkName="Python 3.9 (tf-gpu)" jdkType="Python SDK" />
++    <orderEntry type="jdk" jdkName="Python 3.8 (mlp)" jdkType="Python SDK" />
+     <orderEntry type="sourceFolder" forTests="false" />
+   </component>
+   <component name="PyDocumentationSettings">
+Index: .idea/misc.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<project version=\"4\">\n  <component name=\"ProjectRootManager\" version=\"2\" project-jdk-name=\"Python 3.9 (tf-gpu)\" project-jdk-type=\"Python SDK\" />\n  <component name=\"PyCharmProfessionalAdvertiser\">\n    <option name=\"shown\" value=\"true\" />\n  </component>\n  <component name=\"PyPackaging\">\n    <option name=\"earlyReleasesAsUpgrades\" value=\"true\" />\n  </component>\n  <component name=\"PythonCompatibilityInspectionAdvertiser\">\n    <option name=\"version\" value=\"3\" />\n  </component>\n</project>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/misc.xml b/.idea/misc.xml
+--- a/.idea/misc.xml	(revision 3ba62f82570e75d0f3df9d1a1f1fc5ad7d5e9828)
++++ b/.idea/misc.xml	(date 1634236664896)
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <project version="4">
+-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.9 (tf-gpu)" project-jdk-type="Python SDK" />
++  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.8 (mlp)" project-jdk-type="Python SDK" />
+   <component name="PyCharmProfessionalAdvertiser">
+     <option name="shown" value="true" />
+   </component>
+Index: .idea/vcs.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<project version=\"4\">\n  <component name=\"VcsDirectoryMappings\">\n    <mapping directory=\"$PROJECT_DIR$\" vcs=\"Git\" />\n    <mapping directory=\"$PROJECT_DIR$/Tensorflow/cocoapi\" vcs=\"Git\" />\n    <mapping directory=\"$PROJECT_DIR$/Tensorflow/models\" vcs=\"Git\" />\n  </component>\n</project>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/vcs.xml b/.idea/vcs.xml
+--- a/.idea/vcs.xml	(revision 3ba62f82570e75d0f3df9d1a1f1fc5ad7d5e9828)
++++ b/.idea/vcs.xml	(date 1634236664898)
+@@ -4,5 +4,6 @@
+     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+     <mapping directory="$PROJECT_DIR$/Tensorflow/cocoapi" vcs="Git" />
+     <mapping directory="$PROJECT_DIR$/Tensorflow/models" vcs="Git" />
++    <mapping directory="$PROJECT_DIR$/Tensorflow/models/addons" vcs="Git" />
+   </component>
+ </project>
+\ No newline at end of file
