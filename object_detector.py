@@ -54,7 +54,7 @@ def person_counter(obj_list):
 
 def get_categ_names(classes, scores):
     objects = []
-    threshold = 0.5
+    threshold = 0.6
     for index, value in enumerate(classes[0]):
         if scores[0, index] > threshold:
             name = (category_index.get(value)).get('name')
