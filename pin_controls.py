@@ -79,6 +79,10 @@ def move_down():
     GPIO.output(pin_en_list, (GPIO.LOW, GPIO.LOW, GPIO.LOW, GPIO.HIGH))
 
 
+def terminate():
+    """Clean up GPIO pins for next use."""
+    GPIO.cleanup()
+
 # if __name__ == "__main__":
 #     command = None
 #     while command != "q":

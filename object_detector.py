@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import tensorflow as tf
+
+import pin_controls
 import pin_controls as pins
 import machine_learning
 
@@ -112,6 +114,7 @@ def main():
                         feed_dict={image_tensor: image_np_expanded})
                 except TypeError:
                     cap.release()
+                    pin_controls.terminate()
                     print("TypeError: Capture released.")
                 # Visualization of the results of a detection.
                 vis_util.visualize_boxes_and_labels_on_image_array(
@@ -138,6 +141,7 @@ def main():
 
                 # cv2.imshow('object detection', cv2.resize(image, (900, 800)))
                 if cv2.waitKey(25) & 0xFF == ord('q'):
+                    pin_controls.terminate()
                     cap.release()
                     cv2.destroyAllWindows()
                     break
