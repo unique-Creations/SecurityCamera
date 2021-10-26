@@ -41,7 +41,7 @@ label_map = machine_learning.get_label_map()
 categories = machine_learning.get_categories()
 category_index = machine_learning.get_category_idx()
 detection_graph = machine_learning.get_detect_graph()
-gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.5)
+gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.6)
 
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
