@@ -42,6 +42,12 @@ label_map = machine_learning.get_label_map()
 categories = machine_learning.get_categories()
 category_index = machine_learning.get_category_idx()
 detection_graph = machine_learning.get_detect_graph()
+gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.4)
+
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    for gpu in gpus:
+        tf.config.experimental.set_memory_growth(gpu, True)
 
 
 def person_counter(obj_list):
@@ -85,7 +91,8 @@ def person_coordinates(score, image, boxes):
 
 def main():
     with detection_graph.as_default():
-        with tf.compat.v1.Session(graph=detection_graph) as sess:
+        with tf.compat.v1.Session(graph=detection_graph, config=tf.compat.v1.ConfigProto(gpu_options=gpu_options)) \
+                as sess:
             while True:
                 ret, image = cap.read()
                 # Expand dimensions since the model expects images to have shape: [1, None, None, 3]

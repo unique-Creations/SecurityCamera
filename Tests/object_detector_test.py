@@ -1,7 +1,6 @@
 import numpy as np
 import tensorflow as tf
-
-# Change to object_detector.py for Jetson Nano
+import os, psutil
 import webcam_test_mac
 import machine_learning
 
@@ -14,6 +13,13 @@ label_map = machine_learning.get_label_map()
 categories = machine_learning.get_categories()
 category_index = machine_learning.get_category_idx()
 detection_graph = machine_learning.get_detect_graph()
+gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.4)
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    for gpu in gpus:
+        tf.config.experimental.set_memory_growth(gpu, True)
+# To determine the amount of RAM consumption
+process = psutil.Process(os.getpid())
 
 
 def person_counter(obj_list):
@@ -26,7 +32,7 @@ def person_counter(obj_list):
 
 def get_categ_names(classes, scores):
     objects = []
-    threshold = 0.5
+    threshold = 0.6
     for index, value in enumerate(classes[0]):
         if scores[0, index] > threshold:
             name = (category_index.get(value)).get('name')
@@ -40,7 +46,7 @@ def get_categ_names(classes, scores):
 def person_coordinates(score, image, boxes):
     # TODO: Check Accuracy of coordinates
     width, height = image.shape[:2]
-    true_boxes = boxes[0][score[0] > .5]
+    true_boxes = boxes[0][score[0] > .6]
     for i in range(true_boxes.shape[0]):
         y_min = true_boxes[i, 0] * height
         y_min = "{:.2f}".format(y_min)
@@ -56,7 +62,8 @@ def person_coordinates(score, image, boxes):
 
 def main():
     with detection_graph.as_default():
-        with tf.compat.v1.Session(graph=detection_graph) as sess:
+        with tf.compat.v1.Session(graph=detection_graph, config=tf.compat.v1.ConfigProto(gpu_options=gpu_options)) \
+                as sess:
             while True:
                 ret, image = cap.read()
                 # Expand dimensions since the model expects images to have shape: [1, None, None, 3]
@@ -89,8 +96,10 @@ def main():
                 print(f'Center: {cx, cy}')
                 objects = get_categ_names(classes, scores)
                 print(objects)
-                # TODO: Get category names of all boxes in frame.
                 print(person_counter(objects))
+                # Determine RAM Usage as percentage.
+                ram_usage = (process.memory_info().rss / psutil.virtual_memory().total) * 100
+                print(f'RAM USAGE: {ram_usage}')
                 webcam_test_mac.cv2.imshow('object detection', webcam_test_mac.cv2.resize(image, (900, 800)))
                 if webcam_test_mac.cv2.waitKey(25) & 0xFF == ord('q'):
                     webcam_test_mac.cv2.destroyAllWindows()
