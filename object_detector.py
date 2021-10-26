@@ -41,7 +41,7 @@ label_map = machine_learning.get_label_map()
 categories = machine_learning.get_categories()
 category_index = machine_learning.get_category_idx()
 detection_graph = machine_learning.get_detect_graph()
-gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.6)
+# gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.6)
 
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
@@ -90,7 +90,7 @@ def person_coordinates(score, image, boxes):
 
 def main():
     with detection_graph.as_default():
-        with tf.compat.v1.Session(graph=detection_graph, config=tf.compat.v1.ConfigProto(gpu_options=gpu_options)) \
+        with tf.compat.v1.Session(graph=detection_graph) \
                 as sess:
             while True:
                 ret, image = cap.read()
