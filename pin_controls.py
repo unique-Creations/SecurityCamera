@@ -82,18 +82,3 @@ def move_down():
 def terminate():
     """Clean up GPIO pins for next use."""
     GPIO.cleanup()
-
-# if __name__ == "__main__":
-#     command = None
-#     while command != "q":
-#         command = input("Enter command (q to quit):")
-#         if command == "l":
-#             move_left()
-#         elif command == "r":
-#             move_right()
-#         elif command == "u":
-#             move_up()
-#         elif command == "d":
-#             move_down()
-#     GPIO.output(pin_list, GPIO.LOW)
-#     GPIO.cleanup()
