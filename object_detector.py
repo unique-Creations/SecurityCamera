@@ -64,7 +64,7 @@ def main():
                     line_thickness=2)
                 (h, w) = image.shape[:2]
                 cx, cy = (w // 2, h // 2)
-                data.person_coordinates(scores, image, boxes)
+                data.person_coordinates(scores, image, boxes, (cx, cy))
                 print(f'Center: {cx, cy}')
                 objects = data.get_categ_names(classes, scores, category_index)
                 print(objects)
