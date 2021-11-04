@@ -64,8 +64,10 @@ def main():
 
                 (h, w) = image.shape[:2]
                 cx, cy = (w // 2, h // 2)
+
                 frame_data.person_coordinates(scores, image, boxes, (cx, cy))
                 print(f'Center: {cx, cy}')
+
                 objects = frame_data.get_categ_names(classes, scores, category_index)
                 print(objects)
                 print(frame_data.person_counter(objects))
