@@ -10,7 +10,7 @@ import machine_learning
 import frame_data
 import camera
 
-from Tensorflow.models.research.object_detection.utils import visualization_utils as vis_util
+from object_detection.utils import visualization_utils as vis_util
 
 # Initialize camera class
 cam = camera.Camera(isJetson=False)

@@ -10,7 +10,7 @@ import pin_controls as pins
 import machine_learning
 import os
 
-from Tensorflow.models.research.object_detection.utils import visualization_utils as vis_util
+from object_detection.utils import visualization_utils as vis_util
 
 # Free up ram on Jetson Nano
 os.system("watch -n 1 free -m")

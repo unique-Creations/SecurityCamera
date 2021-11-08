@@ -48,6 +48,10 @@ pin_s_list = [lt_s_pin, rt_s_pin, up_s_pin, dn_s_pin]
 # Set the pins in the list as output pins with initial signals set to low.
 GPIO.setup(pin_list, GPIO.OUT, initial=GPIO.LOW)
 
+# Horizontal & vertical camera angle change per step
+x_step = .45
+y_step = .1
+
 
 def led_on():
     """Sends a high signal on LED pin 7, which turns on the LED."""

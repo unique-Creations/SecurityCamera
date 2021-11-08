@@ -3,7 +3,7 @@ import os
 import six.moves.urllib as urllib
 import tarfile
 
-from Tensorflow.models.research.object_detection.utils import label_map_util
+from object_detection.utils import label_map_util
 
 MODEL_NAME = 'ssd_mobilenet_v1_coco_2018_01_28'
 MODEL_FILE = MODEL_NAME + '.tar.gz'
@@ -11,7 +11,7 @@ DOWNLOAD_BASE = 'http://download.tensorflow.org/models/object_detection/'
 
 PATH_TO_CKPT = MODEL_NAME + '/frozen_inference_graph.pb'
 
-PATH_TO_LABELS = os.path.join('Tensorflow/models/research/object_detection/data', 'mscoco_label_map.pbtxt')
+PATH_TO_LABELS = os.path.join('object_detection/data', 'mscoco_label_map.pbtxt')
 
 NUM_CLASSES = 90
 
