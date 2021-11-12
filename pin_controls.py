@@ -16,46 +16,44 @@ GPIO.setmode(GPIO.BOARD)
 # lt_en_pin: Enable left pin
 # lt_s_pin: Left step pin
 # lt_dir_pin: Left direction pin
-lt_en_pin = 12
-lt_s_pin = 11
-lt_dir_pin = None
+x_en_pin = 12
+step_pin = 31
+dir_pin = 15
 
 # rt_en_pin: Enable right pin
+y_en_pin = 13
+
+
 # rt_s_pin: Right step pin
 # rt_dir_pin: Right direction pin
-rt_en_pin = 15
-rt_s_pin = 13
-rt_dir_pin = None
+
+#rt_s_pin = 13
+#rt_dir_pin = None
 
 # up_en_pin: Enable up pin
 # up_s_pin: Up step pin
 # up_dir_pin: Up direction pin
-up_en_pin = 31
-up_s_pin = 32
-up_dir_pin = None
+#up_en_pin = 31
+#up_s_pin = 32
+#up_dir_pin = None
 
 # dn_en_pin: Enable down pin
 # dn_s_pin: Down step pin
 # dn_dir_pin: Down direction pin
-dn_en_pin = 19
-dn_s_pin = 21
-dn_dir_pin = None
+#dn_en_pin = 19
+#dn_s_pin = 21
+#dn_dir_pin = None
 
 # LED pin
 led_pin = 7
 
 # List of pins
-pin_list = [lt_en_pin, lt_s_pin, lt_dir_pin,
-            rt_en_pin, rt_s_pin, rt_dir_pin,
-            up_en_pin, up_s_pin, up_dir_pin,
-            dn_en_pin, dn_s_pin, dn_dir_pin,
-            led_pin]
-pin_en_list = [lt_en_pin, rt_en_pin, up_en_pin, dn_en_pin]
-pin_s_list = [lt_s_pin, rt_s_pin, up_s_pin, dn_s_pin]
+pin_list = [step_pin, dir_pin, led_pin]
+pin_en_list = [x_en_pin, y_en_pin]
 
 # Set the pins in the list as output pins with initial signals set to low.
+GPIO.setup(pin_en_list, GPIO.OUT, initial=GPIO.HIGH)
 GPIO.setup(pin_list, GPIO.OUT, initial=GPIO.LOW)
-
 # Horizontal & vertical camera angle change per step
 x_step = .45
 y_step = .1
@@ -73,22 +71,22 @@ def led_off():
 
 def move_left():
     """Turn system left"""
-    GPIO.output(pin_en_list, (GPIO.HIGH, GPIO.LOW, GPIO.LOW, GPIO.LOW))
+    GPIO.output(pin_en_list, (GPIO.HIGH, GPIO.LOW))
 
 
 def move_right():
     """Turn system right"""
-    GPIO.output(pin_en_list, (GPIO.LOW, GPIO.HIGH, GPIO.LOW, GPIO.LOW))
+    GPIO.output(pin_en_list, (GPIO.HIGH, GPIO.LOW))
 
 
 def move_up():
     """Turn system up"""
-    GPIO.output(pin_en_list, (GPIO.LOW, GPIO.LOW, GPIO.HIGH, GPIO.LOW))
+    GPIO.output(pin_en_list, (GPIO.LOW, GPIO.HIGH))
 
 
 def move_down():
     """Turn system down"""
-    GPIO.output(pin_en_list, (GPIO.LOW, GPIO.LOW, GPIO.LOW, GPIO.HIGH))
+    GPIO.output(pin_en_list, (GPIO.LOW, GPIO.HIGH))
 
 
 def terminate():

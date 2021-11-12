@@ -33,9 +33,10 @@ try:
 	while display.IsStreaming():
 		img = camera.Capture()
 		detections = net.Detect(img) #i want to get the center xy info
+		obj_ctr_x, obj_ctr_y = None, None
 		for detection in detections: # added code
-
-			print(detection.Center) # added code
+			obj_ctr_x, obj_ctr_y = detection.Center
+			print(obj_ctr_x) # added code
 
 		display.Render(img)
 		display.SetStatus("Object Detection | Network {:.0f} FPS".format(net.GetNetworkFPS()))
