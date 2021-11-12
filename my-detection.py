@@ -23,20 +23,23 @@
 
 import jetson.inference
 import jetson.utils
+import motor_controller as motor
 
 net = jetson.inference.detectNet("ssd-mobilenet-v2", threshold=0.5)
 camera = jetson.utils.videoSource("csi://0")      # '/dev/video0' for V4L2
 display = jetson.utils.videoOutput("display://0") # 'my_video.mp4' for file
-
 try:
-
+	
+	cx, cy = (w // 2, h // 2)
 	while display.IsStreaming():
 		img = camera.Capture()
 		detections = net.Detect(img) #i want to get the center xy info
 		obj_ctr_x, obj_ctr_y = None, None
+		obj_off_x, obj_off_y = None, None
 		for detection in detections: # added code
 			obj_ctr_x, obj_ctr_y = detection.Center
-			print(obj_ctr_x) # added code
+			obj_off_x, obj_off_y = motor.motor_process(obj_ctr_x, obj_ctr_y, cx, cy)
+			print(f'object offset: {obj_off_x, obj_off_y}') # added code
 
 		display.Render(img)
 		display.SetStatus("Object Detection | Network {:.0f} FPS".format(net.GetNetworkFPS()))

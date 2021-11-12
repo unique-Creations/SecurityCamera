@@ -1,8 +1,6 @@
 """
 Implements movement of the camera using the frames.
 """
-from multiprocessing import Manager
-from multiprocessing import Process
 import pid
 import pin_controls as pins
 import frame_data
@@ -14,7 +12,9 @@ import sys
 # Modifiable motor ranges
 x_range = (-90, 90)
 y_range = (-90, 90)
-
+# Horizontal & vertical camera angle change per step
+x_step = .45
+y_step = .1
 
 def signal_handler(sig, frame):
     print("Exiting...")
@@ -31,15 +31,11 @@ def center_person(objX, objY, centerX, centerY, scores, image, boxes):
         ((objX.value, objY.value), rect) = person_loc
 
 
-def pid_process(output, p, i, d, per_coord, center_coord):
-    signal.signal(signal.SIGINT, signal_handler)
+def motor_process(per_x, per_y, img_ctr_x, img_ctr_y):
 
-    p = pid.PID(p.value, i.value, d.value)
-    p.initialize()
-
-    while True:
-        error = center_coord.value - per_coord.value
-        output.value = p.update(error)
+	x_offset = img_ctr_x - per_x
+	y_offset = img_ctr_y - per_y
+    	return (x_offset, y_offset)
 
 
 def in_range(val, start, end):
